@@ -1,0 +1,29 @@
+exec_timeout_secs: 600
+
+functions:
+  checkout:
+    - command: git.get_project
+      params:
+        directory: src
+  test:
+    - command: shell.exec
+      params:
+        working_dir: src
+        shell: bash
+        script: |
+          set -e
+          set -x
+          true
+
+tasks:
+  - name: test
+    commands:
+      - func: checkout
+      - func: test
+
+buildvariants:
+  - name: ubuntu_test
+    display_name: "Ubuntu"
+    run_on: ubuntu2004-small
+    tasks:
+      - test
