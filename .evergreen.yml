@@ -27,6 +27,17 @@ functions:
 
           . .evergreen/use-node.sh
           npm ci
+  check:
+    - command: shell.exec
+      params:
+        working_dir: src
+        shell: bash
+        script: |
+          set -e
+          set -x
+
+          . .evergreen/use-node.sh
+          npm run test-ci
   test:
     - command: shell.exec
       params:
@@ -37,7 +48,6 @@ functions:
           set -x
 
           . .evergreen/use-node.sh
-          npm run check
           npm run test-ci
 
 tasks:
@@ -47,6 +57,12 @@ tasks:
       - func: install_node
       - func: install
       - func: test
+  - name: check
+    commands:
+      - func: checkout
+      - func: install_node
+      - func: install
+      - func: check
 
 buildvariants:
   - name: ubuntu_x64_test
@@ -54,6 +70,7 @@ buildvariants:
     run_on: ubuntu2004-small
     tasks:
       - test
+      - check
   - name: macos_x64_test
     display_name: 'macOS 11.00 x64'
     run_on: macos-1100
