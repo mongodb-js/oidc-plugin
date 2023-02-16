@@ -5,6 +5,28 @@ functions:
     - command: git.get_project
       params:
         directory: src
+  install_node:
+    - command: shell.exec
+      params:
+        working_dir: src
+        shell: bash
+        script: |
+          set -e
+          set -x
+
+          export NODE_VERSION=16.19.0
+          bash .evergreen/install-node.sh
+  install:
+    - command: shell.exec
+      params:
+        working_dir: src
+        shell: bash
+        script: |
+          set -e
+          set -x
+
+          . .evergreen/use-node.sh
+          npm ci
   test:
     - command: shell.exec
       params:
@@ -13,17 +35,37 @@ functions:
         script: |
           set -e
           set -x
-          true
+
+          . .evergreen/use-node.sh
+          npm run check
+          npm run test-ci
 
 tasks:
   - name: test
     commands:
       - func: checkout
+      - func: install_node
+      - func: install
       - func: test
 
 buildvariants:
-  - name: ubuntu_test
-    display_name: "Ubuntu"
+  - name: ubuntu_x64_test
+    display_name: 'Ubuntu 20.04 x64'
     run_on: ubuntu2004-small
+    tasks:
+      - test
+  - name: macos_x64_test
+    display_name: 'macOS 11.00 x64'
+    run_on: macos-1100
+    tasks:
+      - test
+  - name: macos_arm64_test
+    display_name: 'macOS 11.00 arm64'
+    run_on: macos-1100-arm64
+    tasks:
+      - test
+  - name: windows_x64_test
+    display_name: 'Windows x64'
+    run_on: windows-vsCurrent-small
     tasks:
       - test
