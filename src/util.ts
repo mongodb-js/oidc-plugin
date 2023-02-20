@@ -26,6 +26,9 @@ export async function withAbortCheck<
   function listener() {
     reject(signal?.reason ?? new AbortError());
   }
+  signalPromise.catch(() => {
+    /* squelch UnhandledPromiseRejectionWarning */
+  });
 
   signalCheck();
   signal?.addEventListener('abort', listener, { once: true });
@@ -36,9 +39,22 @@ export async function withAbortCheck<
   }
 }
 
+export function errorString(err: unknown): string {
+  return String(
+    typeof err === 'object' && err && 'message' in err ? err.message : err
+  );
+}
+
 export const AbortController =
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   globalThis.AbortController ?? require('abort-controller').AbortController;
 export const AbortSignal =
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   globalThis.AbortSignal ?? require('abort-controller').AbortSignal;
+
+// AbortSignal.timeout, but consistently .unref()ed
+export function timeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms).unref();
+  return controller.signal;
+}

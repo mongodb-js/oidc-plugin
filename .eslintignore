@@ -1,2 +1,5 @@
-.nyc-output
+.nyc_output
 dist
+coverage
+.deps
+index.d.ts

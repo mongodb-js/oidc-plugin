@@ -2,3 +2,4 @@
 dist
 coverage
 .deps
+index.d.ts
