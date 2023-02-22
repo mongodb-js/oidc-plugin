@@ -30,7 +30,7 @@ export interface TypedEventEmitter<EventMap extends object> {
   on<K extends keyof EventMap>(event: K, listener: EventMap[K]): this;
   once<K extends keyof EventMap>(event: K, listener: EventMap[K]): this;
   emit<K extends keyof EventMap>(
-  event: K,
+    event: K,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...args: EventMap[K] extends (...args: infer P) => any ? P : never
   ): unknown;
