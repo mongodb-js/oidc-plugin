@@ -6,6 +6,7 @@ import { EventEmitter, once } from 'events';
 import type { AddressInfo } from 'net';
 import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
+import { AbortController } from './util';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports

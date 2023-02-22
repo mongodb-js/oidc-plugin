@@ -35,3 +35,10 @@ export async function withAbortCheck<
     signal?.removeEventListener('abort', listener);
   }
 }
+
+export const AbortController =
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  globalThis.AbortController ?? require('abort-controller').AbortController;
+export const AbortSignal =
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  globalThis.AbortSignal ?? require('abort-controller').AbortSignal;

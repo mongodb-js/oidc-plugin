@@ -70,6 +70,7 @@
     "typescript": "^4.3.5"
   },
   "dependencies": {
+    "abort-controller": "^3.0.0",
     "express": "^4.18.2"
   }
 }
