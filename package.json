@@ -43,13 +43,14 @@
     "test-cov": "nyc -x \"**/*.spec.*\" --reporter=lcov --reporter=text --reporter=html npm run test",
     "test-watch": "npm run test -- --watch",
     "test-ci": "npm run test-cov",
-    "reformat": "npm run prettier -- --write . && npm run eslint . --fix"
+    "reformat": "npm run prettier -- --write . && npm run eslint . -- --fix"
   },
   "devDependencies": {
     "@mongodb-js/mocha-config-compass": "^0.10.0",
     "@mongodb-js/prettier-config-compass": "^0.5.0",
     "@mongodb-js/tsconfig-compass": "^0.6.0",
     "@types/chai": "^4.2.21",
+    "@types/express": "^4.17.17",
     "@types/mocha": "^9.0.0",
     "@types/node": "^17.0.35",
     "@types/sinon-chai": "^3.2.5",
@@ -62,9 +63,14 @@
     "eslint-plugin-mocha": "^10.1.0",
     "gen-esm-wrapper": "^1.1.0",
     "mocha": "^8.4.0",
+    "node-fetch": "^3.3.0",
     "nyc": "^15.1.0",
     "prettier": "2.3.2",
     "sinon": "^9.2.3",
     "typescript": "^4.3.5"
+  },
+  "dependencies": {
+    "abort-controller": "^3.0.0",
+    "express": "^4.18.2"
   }
 }
