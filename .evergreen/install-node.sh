@@ -19,7 +19,7 @@ if [[ "$OS" == "Windows_NT" ]]; then
   unzip node.zip
   mkdir -p node/bin
   mv -v node-v$NODE_VERSION-win-x64/* node/bin
-  chmod a+x node/bin/*.{exe,cmd,bat}
+  chmod a+x node/bin/*
   export PATH="$PWD/node/bin:$PATH"
 # install Node.js on Linux/MacOS
 else
@@ -29,5 +29,5 @@ else
   nvm install --no-progress "$NODE_VERSION"
 fi
 
-which node || echo "node not found, PATH=$PATH"
-which npm || echo "npm not found, PATH=$PATH"
+which node && node -v || echo "node not found, PATH=$PATH"
+which npm && npm -v || echo "npm not found, PATH=$PATH"
