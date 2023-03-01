@@ -78,7 +78,7 @@ async function getDefaultOpenBrowser(): Promise<
   };
 }
 
-const kEnableFallback = Symbol.for('@@mdb.oidcplugin.MongoDBOIDCErrorTag');
+const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
 
 /** @internal */
 export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {

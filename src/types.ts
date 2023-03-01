@@ -117,6 +117,7 @@ export type OIDCAbortSignal = {
 const MongoDBOIDCErrorTag = Symbol.for('@@mdb.oidcplugin.MongoDBOIDCErrorTag');
 /** @public */
 export class MongoDBOIDCError extends Error {
+  /** @internal */
   private [MongoDBOIDCErrorTag] = true;
 
   constructor(message: string) {
