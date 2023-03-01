@@ -1,3 +1,7 @@
+import type {
+  IncomingMessage as HttpIncomingMessage,
+  ServerResponse as HttpServerResponse,
+} from 'http';
 import { MongoDBOIDCPluginImpl } from './plugin';
 import type {
   MongoDBOIDCLogEventsMap,
@@ -113,6 +117,14 @@ export interface MongoDBOIDCPluginOptions {
    * plugin instance to authenticate).
    */
   signal?: OIDCAbortSignal;
+
+  /**
+   * A custom handler for providing HTTP responses for requests to the
+   * redirect HTTP server used in the Authorization Code Flow.
+   *
+   * The default handler serves simple text/plain messages.
+   */
+  redirectServerRequestHandler?: RedirectServerRequestHandler;
 }
 
 /** @public */
@@ -160,3 +172,34 @@ export function createMongoDBOIDCPlugin(
 
 /** @internal */
 export const kDefaultOpenBrowserTimeout = 10_000;
+
+/** @public */
+export type RedirectServerRequestInfo = {
+  /** The incoming HTTP request. */
+  req: HttpIncomingMessage;
+  /** The outgoing HTTP response. */
+  res: HttpServerResponse;
+  /** The suggested HTTP status code. For unknown-url, this is 404. */
+  status: number;
+} & (
+  | {
+      result: 'rejected';
+      /** Error information reported by the IdP as defined in RFC6749 section 4.1.2.1 */
+      error?: string;
+      /** Error information reported by the IdP as defined in RFC6749 section 4.1.2.1 */
+      errorDescription?: string;
+      /** Error information reported by the IdP as defined in RFC6749 section 4.1.2.1 */
+      errorURI?: string;
+    }
+  | {
+      result: 'accepted';
+    }
+  | {
+      result: 'unknown-url';
+    }
+);
+
+/** @public */
+export type RedirectServerRequestHandler = (
+  data: RedirectServerRequestInfo
+) => void;

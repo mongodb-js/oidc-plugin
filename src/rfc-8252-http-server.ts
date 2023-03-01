@@ -15,17 +15,23 @@ import type {
 import { MongoDBOIDCError } from './types';
 import { withAbortCheck } from './util';
 import type { AddressInfo } from 'net';
+import type {
+  RedirectServerRequestHandler,
+  RedirectServerRequestInfo,
+} from './api';
 
 // For starting the HTTP server, we'll need the path at which
 // we receive OAuth tokens.
 export interface RFC8252HTTPServerOptions {
   redirectUrl: string;
   logger?: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
+  redirectServerRequestHandler?: RedirectServerRequestHandler;
 }
 
 /** @internal */
 export class RFC8252HTTPServer {
   private readonly redirectUrl: URL;
+  private readonly redirectServerHandler: RedirectServerRequestHandler;
   private readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
   private servers: HTTPServer[] = [];
   private readonly expressApp: ReturnType<typeof express>;
@@ -38,6 +44,8 @@ export class RFC8252HTTPServer {
 
   constructor(options: RFC8252HTTPServerOptions) {
     this.redirectUrl = new URL(options.redirectUrl);
+    this.redirectServerHandler =
+      options.redirectServerRequestHandler ?? defaultRedirectServerHandler;
     this.logger = options.logger ?? new EventEmitter();
     this.oidcParamsPromise = new Promise<string>(
       (resolve) => (this.oidcParamsResolve = resolve)
@@ -51,14 +59,32 @@ export class RFC8252HTTPServer {
     // express here, which handles cases that require POST body parsing for us.
     this.expressApp.use(express.urlencoded({ extended: false }));
     this.expressApp.use(express.json());
+    this.expressApp.use((req, res, next) => {
+      // Set some default HTTP security headers. The CSP here is fairly strict,
+      // but specific handlers can override these as necessary.
+      res.setHeader('Content-Security-Policy', "default-src 'self'");
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      next();
+    });
 
     // Redirect to external server:
     this.expressApp.get('/redirect/:id', this._handleRedirectToExternal);
     // Redirect from external server:
     this.expressApp.all(this.redirectUrl.pathname, this._handleOIDCCallback);
+    // Success page:
+    this.expressApp.get('/success/:nonce', this._handleSuccess);
     // Everything else:
     this.expressApp.all('*', this._fallbackHandler);
   }
+
+  private _handleSuccess: RequestHandler = (req, res) => {
+    this.redirectServerHandler({
+      req,
+      res,
+      result: 'accepted',
+      status: 200,
+    });
+  };
 
   private _handleRedirectToExternal: RequestHandler<{ id: string }> = (
     req,
@@ -96,18 +122,49 @@ export class RFC8252HTTPServer {
         method: req.method,
         hasBody,
       });
-      res.status(405);
-      res.type('text/plain');
-      res.send('405 Invalid Method');
+
+      this.redirectServerHandler({
+        req,
+        res,
+        result: 'rejected',
+        status: 405,
+        error: 'invalid_method',
+        errorDescription: 'Invalid HTTP Method',
+      });
       return;
     }
     this.logger.emit('mongodb-oidc-plugin:oidc-callback-accepted', {
       method: req.method,
       hasBody,
     });
-    res.status(200);
-    res.type('text/plain');
-    res.send('Welcome! Everything is fine.');
+
+    if (url.searchParams.get('error')) {
+      this.redirectServerHandler({
+        req,
+        res,
+        result: 'rejected',
+        status: 200,
+        // Standard params from https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2.1
+        error: ensureNQSChar(url.searchParams.get('error')),
+        errorDescription: ensureNQSChar(
+          url.searchParams.get('error_description')
+        ),
+        errorURI: ensureURI(url.searchParams.get('error_uri')),
+      });
+    } else {
+      // https://mailarchive.ietf.org/arch/msg/oauth/RqlUvseG_RnOWrEV_WJACW8oUdU/
+      // > Callback URL pages SHOULD redirect to a trusted page immediately after
+      // > receiving the authorization code in the URL.  This prevents the
+      // > authorization code from remaining in the browser history, or from
+      // > inadvertently leaking in a referer header.
+      void (async () => {
+        const nonce = (await promisify(randomBytes)(16)).toString('hex');
+        res.status(307);
+        res.set('Location', '/success/' + nonce);
+        res.send();
+      })();
+    }
+
     this.oidcParamsResolve?.(url.toString());
   };
 
@@ -116,11 +173,13 @@ export class RFC8252HTTPServer {
       method: req.method,
       path: req.url,
     });
-    // TODO(MONGOSH-1396): Here and elsewhere, we should allow callers of the
-    // library to specify custom pages instead of these text/plain shorthands.
-    res.status(404);
-    res.type('text/plain');
-    res.send('404 Not Found');
+
+    this.redirectServerHandler({
+      req,
+      res,
+      result: 'unknown-url',
+      status: 404,
+    });
   };
 
   /**
@@ -351,5 +410,47 @@ export class RFC8252HTTPServer {
     } finally {
       await this.close();
     }
+  }
+}
+
+function defaultRedirectServerHandler(info: RedirectServerRequestInfo): void {
+  const { res, result, status } = info;
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'text/plain');
+  switch (result) {
+    case 'accepted':
+      res.end('Authentication successful! You can close this window now.');
+      return;
+    case 'rejected': {
+      const { error, errorDescription, errorURI } = info;
+      let text = 'Authentication failed!\n';
+      if (error) text += `Error: ${error}\n`;
+      if (errorDescription) text += `Details: ${errorDescription}\n`;
+      if (errorURI) text += `More information: ${errorURI}\n`;
+      res.end(text);
+      return;
+    }
+    case 'unknown-url':
+      res.end('Not found');
+      return;
+  }
+}
+
+// Ensure that `str` confirms to the `NQSCHAR` definition used in RFC6749 (OAuth 2.0)
+// and return `undefined` if it is empty or non-conforming.
+// (This deviates from the spec slightly in that it allows characters outside of ASCII).
+function ensureNQSChar(str: string | undefined | null): string | undefined {
+  // eslint-disable-next-line no-control-regex
+  if (!str || /[\x00-\x1f\x22\x5c\x7f]/.test(str)) return undefined;
+  return str;
+}
+
+function ensureURI(str: string | undefined | null): string | undefined {
+  if (!str) return undefined;
+  try {
+    new URL(str);
+    return str;
+  } catch {
+    return undefined;
   }
 }

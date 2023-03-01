@@ -263,6 +263,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const server = new RFC8252HTTPServer({
       redirectUrl: this.getRedirectURI(),
       logger: this.logger,
+      redirectServerRequestHandler: this.options.redirectServerRequestHandler,
     });
     const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
     let paramsUrl = '';
