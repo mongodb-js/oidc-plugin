@@ -83,7 +83,7 @@ const kEnableFallback = Symbol.for('@@mdb.oidcplugin.MongoDBOIDCErrorTag');
 /** @internal */
 export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private readonly options: Readonly<MongoDBOIDCPluginOptions>;
-  private readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
+  public readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
   private readonly mapUserToAuthState = new Map<string, UserOIDCAuthState>();
   public readonly mongoClientOptions: MongoDBOIDCPlugin['mongoClientOptions'];
 

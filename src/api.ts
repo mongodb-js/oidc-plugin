@@ -130,6 +130,11 @@ export interface MongoDBOIDCPlugin {
       readonly REFRESH_TOKEN_CALLBACK: OIDCRefreshFunction;
     };
   };
+
+  /**
+   * The logger instance passed in the options, or a default one otherwise.
+   */
+  readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
 }
 
 /**
@@ -149,6 +154,7 @@ export function createMongoDBOIDCPlugin(
   const plugin = new MongoDBOIDCPluginImpl({ ...options });
   return {
     mongoClientOptions: plugin.mongoClientOptions,
+    logger: plugin.logger,
   };
 }
 
