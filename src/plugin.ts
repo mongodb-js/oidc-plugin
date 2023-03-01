@@ -426,6 +426,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           });
           break get_tokens;
         }
+        state.currentTokenSet = null;
         let error;
         if (this.isFlowAllowed('auth-code')) {
           try {
@@ -461,14 +462,26 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         }
         if (error) throw error;
       }
+
+      if (!state.currentTokenSet?.set?.access_token) {
+        throw new MongoDBOIDCError('Could not retrieve valid access token');
+      }
+    } catch (err: unknown) {
+      this.logger.emit('mongodb-oidc-plugin:auth-failed', {
+        error: errorString(err),
+      });
+      throw err;
     } finally {
       this.options.signal?.removeEventListener('abort', optionsAbortCb);
       driverAbortSignal?.removeEventListener('abort', driverAbortCb);
     }
 
-    if (!state.currentTokenSet?.set?.access_token) {
-      throw new MongoDBOIDCError('Could not retrieve valid access token');
-    }
+    this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
+      hasRefreshToken: !!state.currentTokenSet.set.refresh_token,
+      expiresAt: state.currentTokenSet.set.expires_at
+        ? new Date(state.currentTokenSet.set.expires_at * 1000).toISOString()
+        : null,
+    });
 
     return {
       accessToken: state.currentTokenSet.set.access_token,

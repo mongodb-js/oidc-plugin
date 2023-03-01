@@ -31,6 +31,11 @@ export interface MongoDBOIDCLogEventsMap {
   'mongodb-oidc-plugin:auth-attempt-failed': (event: { error: string }) => void;
   'mongodb-oidc-plugin:refresh-failed': (event: { error: string }) => void;
   'mongodb-oidc-plugin:skip-auth-attempt': (event: { reason: string }) => void;
+  'mongodb-oidc-plugin:auth-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:auth-succeeded': (event: {
+    hasRefreshToken: boolean;
+    expiresAt: string | null;
+  }) => void;
 }
 
 /** @public */
