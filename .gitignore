@@ -6,3 +6,4 @@ coverage
 .esm-wrapper.mjs
 lib/
 .deps
+index.d.ts

@@ -18,6 +18,7 @@ const tsRules = {
   // Newly converted plugins use `any` quite a lot, we can't enable the rule,
   // but we can warn so we can eventually address this
   '@typescript-eslint/no-unsafe-argument': 'warn',
+  'no-console': 'warn',
 };
 
 const testConfigurations = ['plugin:mocha/recommended'];

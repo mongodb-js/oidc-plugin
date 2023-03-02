@@ -37,7 +37,7 @@ functions:
           set -x
 
           . .evergreen/use-node.sh
-          npm run test-ci
+          npm run check
   test:
     - command: shell.exec
       params:
@@ -49,6 +49,17 @@ functions:
 
           . .evergreen/use-node.sh
           npm run test-ci
+  test_electron:
+    - command: shell.exec
+      params:
+        working_dir: src
+        shell: bash
+        script: |
+          set -e
+          set -x
+
+          . .evergreen/use-node.sh
+          npm run test-electron
 
 tasks:
   - name: test
@@ -57,6 +68,12 @@ tasks:
       - func: install_node
       - func: install
       - func: test
+  - name: test_electron
+    commands:
+      - func: checkout
+      - func: install_node
+      - func: install
+      - func: test_electron
   - name: check
     commands:
       - func: checkout
@@ -70,19 +87,23 @@ buildvariants:
     run_on: ubuntu2004-small
     tasks:
       - test
+      - test_electron
       - check
   - name: macos_x64_test
     display_name: 'macOS 11.00 x64'
-    run_on: macos-1100
+    run_on: macos-1100-gui
     tasks:
       - test
+      - test_electron
   - name: macos_arm64_test
     display_name: 'macOS 11.00 arm64'
-    run_on: macos-1100-arm64
+    run_on: macos-1100-arm64-gui
     tasks:
       - test
+      - test_electron
   - name: windows_x64_test
     display_name: 'Windows x64'
     run_on: windows-vsCurrent-small
     tasks:
       - test
+      - test_electron

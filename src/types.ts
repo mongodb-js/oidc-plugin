@@ -22,6 +22,20 @@ export interface MongoDBOIDCLogEventsMap {
     interfaces: string[];
   }) => void;
   'mongodb-oidc-plugin:local-server-close': (event: { url: string }) => void;
+  'mongodb-oidc-plugin:open-browser': (event: {
+    customOpener: boolean;
+  }) => void;
+  'mongodb-oidc-plugin:notify-device-flow': () => void;
+  'mongodb-oidc-plugin:auth-attempt-started': (event: { flow: string }) => void;
+  'mongodb-oidc-plugin:auth-attempt-succeeded': () => void;
+  'mongodb-oidc-plugin:auth-attempt-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:refresh-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:skip-auth-attempt': (event: { reason: string }) => void;
+  'mongodb-oidc-plugin:auth-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:auth-succeeded': (event: {
+    hasRefreshToken: boolean;
+    expiresAt: string | null;
+  }) => void;
 }
 
 /** @public */
@@ -35,6 +49,57 @@ export interface TypedEventEmitter<EventMap extends object> {
     ...args: EventMap[K] extends (...args: infer P) => any ? P : never
   ): unknown;
 }
+
+// We're copying driver types here rather than importing them
+// because we don't want to add a dependency on the driver from the
+// plugin package itself here.
+// TypeScript will still complain if they start mismatching,
+// and these are standarized/spec'd, so unlikely to change frequently,
+// esp. in breaking ways.
+
+/**
+ * A copy of the Node.js driver's `OIDCMechanismServerStep1`
+ * @public
+ */
+export interface OIDCMechanismServerStep1 {
+  authorizationEndpoint?: string;
+  tokenEndpoint?: string;
+  deviceAuthorizationEndpoint?: string;
+  clientId: string;
+  clientSecret?: string;
+  requestScopes?: string[];
+}
+
+/**
+ * A copy of the Node.js driver's `OIDCRequestTokenResult`
+ * @public
+ */
+export interface OIDCRequestTokenResult {
+  accessToken: string;
+  expiresInSeconds?: number;
+  refreshToken?: string;
+}
+
+/**
+ * A copy of the Node.js driver's `OIDCRequestFunction`
+ * @public
+ */
+export type OIDCRequestFunction = (
+  principalName: string | undefined,
+  idl: OIDCMechanismServerStep1,
+  abortSignal?: OIDCAbortSignal | number
+) => Promise<OIDCRequestTokenResult>;
+
+/**
+ * A copy of the Node.js driver's `OIDCRefreshFunction`
+ * @public
+ */
+export type OIDCRefreshFunction = (
+  principalName: string | undefined,
+  idl: OIDCMechanismServerStep1,
+  result: OIDCRequestTokenResult,
+  abortSignal?: OIDCAbortSignal | number
+) => Promise<OIDCRequestTokenResult>;
 
 /** @public */
 export type OIDCAbortSignal = {
@@ -52,6 +117,7 @@ export type OIDCAbortSignal = {
 const MongoDBOIDCErrorTag = Symbol.for('@@mdb.oidcplugin.MongoDBOIDCErrorTag');
 /** @public */
 export class MongoDBOIDCError extends Error {
+  /** @internal */
   private [MongoDBOIDCErrorTag] = true;
 
   constructor(message: string) {

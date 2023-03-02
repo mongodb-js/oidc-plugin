@@ -6,5 +6,7 @@ ignores:
  - '@types/sinon-chai'
  - 'sinon'
  - 'node-fetch'
+ - 'rimraf'
+ - 'process-on-spawn'
 ignore-patterns:
  - 'dist'

@@ -2,7 +2,10 @@
   "extends": "@mongodb-js/tsconfig-compass/tsconfig.common.json",
   "compilerOptions": {
     "outDir": "dist",
-    "allowJs": true
+    "removeComments": false,
+    "sourceMap": true,
+    "target": "es2020",
+    "lib": ["es2020"]
   },
   "include": ["src/**/*"],
   "exclude": ["./src/**/*.spec.*"]
