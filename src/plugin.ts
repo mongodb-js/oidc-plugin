@@ -486,6 +486,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return {
       accessToken: state.currentTokenSet.set.access_token,
       refreshToken: state.currentTokenSet.set.refresh_token,
+      // Passing `expiresInSeconds: 0` results in the driver not caching the token.
+      // We perform our own caching here inside the plugin, so interactions with the
+      // cache of the driver are not really required or necessarily helpful.
+      // The driver cache has a finer cache key (host address instead of clientId),
+      // so may require more authentication attempts, and is global,
+      // not per-MongoClient.
+      // It probably would be fine to pass in the actual expiration time here, but
+      // there seem to be no benefits to doing so.
       expiresInSeconds: 0,
     };
   }

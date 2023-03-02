@@ -107,7 +107,7 @@ export interface MongoDBOIDCPluginOptions {
    * attempt.
    *
    * Note that the driver also registers its own AbortSignal with individual
-   * authentication attempts in order to enfore a timeout, which has the
+   * authentication attempts in order to enforce a timeout, which has the
    * same effect for authentication attempts from that driver MongoClient
    * instance (but does not prevent other MongoClients from using this
    * plugin instance to authenticate).
