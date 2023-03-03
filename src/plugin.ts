@@ -260,13 +260,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     let issuer = new Issuer(issuerParams);
     let client = new issuer.Client(clientParams);
 
+    const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
     const server = new RFC8252HTTPServer({
       redirectUrl: this.getRedirectURI(),
       logger: this.logger,
       redirectServerRequestHandler: this.options.redirectServerRequestHandler,
+      oidcStateParam,
     });
-    const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
     let paramsUrl = '';
+    let enableFallback = true;
 
     try {
       await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
@@ -282,17 +284,20 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           await server.addRedirect(authCodeFlowUrl);
 
         signalCheck();
-        const browserHandle = await this.openBrowser({ url: localUrl, signal });
         const browserStatePromise = new Promise<never>((resolve, reject) => {
-          browserHandle?.once('error', (err) => reject(err));
-          browserHandle?.once('exit', (code) => {
-            if (code !== 0)
-              reject(
-                new MongoDBOIDCError(
-                  `Opening browser failed with exit code ${code}`
-                )
-              );
-          });
+          this.openBrowser({ url: localUrl, signal })
+            .then((browserHandle) => {
+              browserHandle?.once('error', (err) => reject(err));
+              browserHandle?.once('exit', (code) => {
+                if (code !== 0)
+                  reject(
+                    new MongoDBOIDCError(
+                      `Opening browser failed with exit code ${code}`
+                    )
+                  );
+              });
+            })
+            .catch(reject);
         });
 
         const timeout: Promise<never> = new Promise((resolve, reject) => {
@@ -318,6 +323,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           signalPromise,
         ]);
 
+        enableFallback = false;
         paramsUrl = await server.waitForOIDCParamsAndClose({ signal });
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -325,7 +331,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       // Tell the outer logic here to fallback to device auth flow if it is
       // available if any of the steps above failed.
       if (Object.isExtensible(err)) {
-        err[kEnableFallback] = true;
+        err[kEnableFallback] = enableFallback;
       }
       throw err;
     } finally {

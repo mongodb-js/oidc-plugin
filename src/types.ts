@@ -6,10 +6,12 @@ export interface MongoDBOIDCLogEventsMap {
   'mongodb-oidc-plugin:oidc-callback-accepted': (event: {
     method: string;
     hasBody: boolean;
+    errorCode?: string;
   }) => void;
   'mongodb-oidc-plugin:oidc-callback-rejected': (event: {
     method: string;
     hasBody: boolean;
+    errorCode: string;
   }) => void;
   'mongodb-oidc-plugin:unknown-url-accessed': (event: {
     method: string;

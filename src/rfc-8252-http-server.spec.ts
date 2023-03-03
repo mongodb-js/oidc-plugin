@@ -7,6 +7,8 @@ import type { AddressInfo } from 'net';
 import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
 import { AbortController } from './util';
+import { promisify } from 'util';
+import { randomBytes } from 'crypto';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -20,6 +22,7 @@ describe('RFC8252HTTPServer', function () {
   let logger: EventEmitter;
   let events: [string, ...unknown[]][];
   let sandbox: SinonSandbox;
+  let oidcStateParam: string;
 
   before(async function () {
     externalServer = createHTTPServer((req, res) => {
@@ -28,6 +31,7 @@ describe('RFC8252HTTPServer', function () {
     externalServer.listen(0, '127.0.0.1');
     await once(externalServer, 'listening');
     externalServerPort = (externalServer.address() as AddressInfo).port;
+    oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
   });
   after(async function () {
     externalServer.close();
@@ -55,12 +59,13 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://localhost:27097/oidc%20redirect',
         logger,
+        oidcStateParam,
       });
       expect(server.listeningPort).to.equal(undefined);
       await server.listen();
       expect(server.listeningPort).to.equal(27097);
 
-      const url = 'http://localhost:27097/oidc%20redirect?foo=bar';
+      const url = `http://localhost:27097/oidc%20redirect?foo=bar&state=${oidcStateParam}`;
       const res = await fetch(url);
       expect(res.status).to.equal(200);
       expect(await server.waitForOIDCParams()).to.equal(url);
@@ -82,13 +87,14 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://127.0.0.1:0/oidc%20redirect',
         logger,
+        oidcStateParam,
       });
       expect(server.listeningPort).to.equal(undefined);
       await server.listen();
       expect(server.listeningPort).to.be.a('number');
 
       const url = new URL(server.listeningRedirectUrl || '');
-      url.search = 'foo=bar';
+      url.search = `foo=bar&state=${oidcStateParam}`;
       const res = await fetch(url.toString());
       expect(res.status).to.equal(200);
       expect(await server.waitForOIDCParams()).to.equal(url.toString());
@@ -98,6 +104,7 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://127.0.0.1:0/oidc%20redirect',
         logger,
+        oidcStateParam,
       });
       await server.listen();
       const url = new URL(server.listeningRedirectUrl || '');
@@ -116,13 +123,14 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://[::1]:0/oidc%20redirect',
         logger,
+        oidcStateParam,
       });
       expect(server.listeningPort).to.equal(undefined);
       await server.listen();
       expect(server.listeningPort).to.be.a('number');
 
       const url = new URL(server.listeningRedirectUrl || '');
-      url.search = 'foo=bar';
+      url.search = `foo=bar&state=${oidcStateParam}`;
       const res = await fetch(url.toString());
       expect(res.status).to.equal(200);
       expect(await server.waitForOIDCParams()).to.equal(url.toString());
@@ -132,6 +140,7 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://[::1]:0/oidc%20redirect',
         logger,
+        oidcStateParam,
       });
       await server.listen();
       const url = new URL(server.listeningRedirectUrl || '');
@@ -150,6 +159,7 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://doesnotexist/',
         logger,
+        oidcStateParam,
       });
       try {
         await server.listen();
@@ -165,6 +175,7 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: `http://localhost:${externalServerPort}/`,
         logger,
+        oidcStateParam,
       });
       try {
         await server.listen();
@@ -181,6 +192,7 @@ describe('RFC8252HTTPServer', function () {
       server = new RFC8252HTTPServer({
         redirectUrl: 'http://localhost:0/oidc-redirect',
         logger,
+        oidcStateParam,
       });
       expect(server.listeningPort).to.equal(undefined);
       await server.listen();
@@ -192,6 +204,7 @@ describe('RFC8252HTTPServer', function () {
       const params = new URLSearchParams([
         ['foo', 'bar'],
         ['baz', 'quux'],
+        ['state', oidcStateParam],
       ]);
       const res = await fetch(url.toString(), {
         method: 'POST',
@@ -204,12 +217,12 @@ describe('RFC8252HTTPServer', function () {
 
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:oidc-callback-accepted',
-        { method: 'POST', hasBody: true },
+        { method: 'POST', hasBody: true, errorCode: undefined },
       ]);
     });
 
     it('can accept JSON POST bodies', async function () {
-      const params = { foo: 'bar', baz: 'quux' };
+      const params = { foo: 'bar', baz: 'quux', state: oidcStateParam };
       const res = await fetch(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -222,7 +235,7 @@ describe('RFC8252HTTPServer', function () {
 
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:oidc-callback-accepted',
-        { method: 'POST', hasBody: true },
+        { method: 'POST', hasBody: true, errorCode: undefined },
       ]);
     });
 
@@ -273,6 +286,7 @@ describe('RFC8252HTTPServer', function () {
       const params = new URLSearchParams([
         ['foo', 'bar'],
         ['baz', 'quux'],
+        ['state', oidcStateParam],
       ]);
       url.search = params.toString();
       const res = await fetch(url.toString());

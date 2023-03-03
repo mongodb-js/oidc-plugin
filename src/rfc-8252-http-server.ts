@@ -24,6 +24,7 @@ import type {
 // we receive OAuth tokens.
 export interface RFC8252HTTPServerOptions {
   redirectUrl: string;
+  oidcStateParam: string;
   logger?: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
   redirectServerRequestHandler?: RedirectServerRequestHandler;
 }
@@ -31,6 +32,7 @@ export interface RFC8252HTTPServerOptions {
 /** @internal */
 export class RFC8252HTTPServer {
   private readonly redirectUrl: URL;
+  private readonly oidcStateParam: string;
   private readonly redirectServerHandler: RedirectServerRequestHandler;
   private readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
   private servers: HTTPServer[] = [];
@@ -39,16 +41,25 @@ export class RFC8252HTTPServer {
     string,
     { targetUrl: string; onAccessed: () => void }
   >();
+
+  // Promise that is resolved with the OIDC params once the user is
+  // done navigating to the success page.
   private readonly oidcParamsPromise: Promise<string>;
   private oidcParamsResolve?: (params: string) => void;
+  private oidcParamsReject?: (error: MongoDBOIDCError) => void;
+  // Place to temporarily store params between accepting the redirect
+  // and the user accessing the success page.
+  private oidcParams: string | undefined;
 
   constructor(options: RFC8252HTTPServerOptions) {
     this.redirectUrl = new URL(options.redirectUrl);
+    this.oidcStateParam = options.oidcStateParam;
     this.redirectServerHandler =
       options.redirectServerRequestHandler ?? defaultRedirectServerHandler;
     this.logger = options.logger ?? new EventEmitter();
     this.oidcParamsPromise = new Promise<string>(
-      (resolve) => (this.oidcParamsResolve = resolve)
+      (resolve, reject) =>
+        ([this.oidcParamsResolve, this.oidcParamsReject] = [resolve, reject])
     );
 
     this.expressApp = express();
@@ -77,12 +88,19 @@ export class RFC8252HTTPServer {
     this.expressApp.all('*', this._fallbackHandler);
   }
 
-  private _handleSuccess: RequestHandler = (req, res) => {
+  private _handleSuccess: RequestHandler = (req, res, next) => {
+    const { oidcParams } = this;
+    if (!oidcParams) {
+      return next();
+    }
     this.redirectServerHandler({
       req,
       res,
       result: 'accepted',
       status: 200,
+    });
+    res.on('finish', () => {
+      this.oidcParamsResolve?.(oidcParams);
     });
   };
 
@@ -110,6 +128,29 @@ export class RFC8252HTTPServer {
     if (!baseUrl) {
       throw new MongoDBOIDCError('Received HTTP request while not listening');
     }
+
+    let isGenuineOIDCResponse = false;
+    const reject = (
+      info: Omit<
+        RedirectServerRequestInfo & { result: 'rejected' },
+        'req' | 'res' | 'result'
+      >
+    ) => {
+      this.redirectServerHandler({
+        req,
+        res,
+        result: 'rejected',
+        ...info,
+      });
+      if (isGenuineOIDCResponse) {
+        this.oidcParamsReject?.(
+          new MongoDBOIDCError(
+            `${info.error || 'unknown_code'}: ${info.errorDescription || ''}`
+          )
+        );
+      }
+    };
+
     const url = new URL(req.url, baseUrl);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const hasBody = Object.keys(req.body || {}).length > 0;
@@ -121,28 +162,57 @@ export class RFC8252HTTPServer {
       this.logger.emit('mongodb-oidc-plugin:oidc-callback-rejected', {
         method: req.method,
         hasBody,
+        errorCode: 'invalid_method',
       });
 
-      this.redirectServerHandler({
-        req,
-        res,
-        result: 'rejected',
+      reject({
         status: 405,
         error: 'invalid_method',
         errorDescription: 'Invalid HTTP Method',
       });
       return;
     }
+
+    // If `state` does not match the expected value, this might be a CSRF request.
+    // Even if we did progress from here, the OIDC library would reject this
+    // request, but bailing out early here means that after this conditional
+    // we know we are dealing with a genuine response from the auth server and
+    // can reject the `oidcParamsPromise` if there is an error.
+    if (url.searchParams.get('state') !== this.oidcStateParam) {
+      reject({
+        status: 403,
+        error: 'state_mismatch',
+        errorDescription: '',
+      });
+      return;
+    }
+    isGenuineOIDCResponse = true;
+
+    const oidcParams = url.toString();
+    if (this.oidcParams !== undefined && this.oidcParams !== oidcParams) {
+      this.logger.emit('mongodb-oidc-plugin:oidc-callback-rejected', {
+        method: req.method,
+        hasBody,
+        errorCode: 'already_received_code',
+      });
+      // This should not happen in practice...
+      reject({
+        status: 409,
+        error: 'already_received_code',
+        errorDescription:
+          'A different authentication code was already received by the application',
+      });
+      return;
+    }
+    this.oidcParams = oidcParams;
     this.logger.emit('mongodb-oidc-plugin:oidc-callback-accepted', {
       method: req.method,
       hasBody,
+      errorCode: url.searchParams.get('error') ?? undefined,
     });
 
     if (url.searchParams.get('error')) {
-      this.redirectServerHandler({
-        req,
-        res,
-        result: 'rejected',
+      reject({
         status: 200,
         // Standard params from https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2.1
         error: ensureNQSChar(url.searchParams.get('error')),
@@ -151,21 +221,20 @@ export class RFC8252HTTPServer {
         ),
         errorURI: ensureURI(url.searchParams.get('error_uri')),
       });
-    } else {
-      // https://mailarchive.ietf.org/arch/msg/oauth/RqlUvseG_RnOWrEV_WJACW8oUdU/
-      // > Callback URL pages SHOULD redirect to a trusted page immediately after
-      // > receiving the authorization code in the URL.  This prevents the
-      // > authorization code from remaining in the browser history, or from
-      // > inadvertently leaking in a referer header.
-      void (async () => {
-        const nonce = (await promisify(randomBytes)(16)).toString('hex');
-        res.status(307);
-        res.set('Location', '/success/' + nonce);
-        res.send();
-      })();
+      return;
     }
 
-    this.oidcParamsResolve?.(url.toString());
+    // https://mailarchive.ietf.org/arch/msg/oauth/RqlUvseG_RnOWrEV_WJACW8oUdU/
+    // > Callback URL pages SHOULD redirect to a trusted page immediately after
+    // > receiving the authorization code in the URL.  This prevents the
+    // > authorization code from remaining in the browser history, or from
+    // > inadvertently leaking in a referer header.
+    void (async () => {
+      const nonce = (await promisify(randomBytes)(16)).toString('hex');
+      res.status(303); // 'See Other', turns a potential POST into GET
+      res.set('Location', '/success/' + nonce);
+      res.send();
+    })();
   };
 
   private _fallbackHandler: RequestHandler = (req, res) => {
