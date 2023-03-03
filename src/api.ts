@@ -171,7 +171,7 @@ export function createMongoDBOIDCPlugin(
 }
 
 /** @internal */
-export const kDefaultOpenBrowserTimeout = 10_000;
+export const kDefaultOpenBrowserTimeout = 20_000;
 
 /** @public */
 export type RedirectServerRequestInfo = {
