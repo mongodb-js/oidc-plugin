@@ -129,23 +129,33 @@ export class RFC8252HTTPServer {
       throw new MongoDBOIDCError('Received HTTP request while not listening');
     }
 
-    let isGenuineOIDCResponse = false;
+    let isAcceptedOIDCResponse = false;
     const reject = (
       info: Omit<
         RedirectServerRequestInfo & { result: 'rejected' },
         'req' | 'res' | 'result'
       >
     ) => {
+      this.logger.emit('mongodb-oidc-plugin:oidc-callback-rejected', {
+        method: req.method,
+        hasBody,
+        errorCode: info.error ?? 'unknown_error',
+        isAcceptedOIDCResponse,
+      });
+
       this.redirectServerHandler({
         req,
         res,
         result: 'rejected',
         ...info,
       });
-      if (isGenuineOIDCResponse) {
+
+      if (isAcceptedOIDCResponse) {
         this.oidcParamsReject?.(
           new MongoDBOIDCError(
-            `${info.error || 'unknown_code'}: ${info.errorDescription || ''}`
+            `${info.error || 'unknown_code'}: ${
+              info.errorDescription || '[no details]'
+            }`
           )
         );
       }
@@ -159,12 +169,6 @@ export class RFC8252HTTPServer {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       url.search = new URLSearchParams(Object.entries(req.body)).toString();
     } else if (req.method !== 'GET') {
-      this.logger.emit('mongodb-oidc-plugin:oidc-callback-rejected', {
-        method: req.method,
-        hasBody,
-        errorCode: 'invalid_method',
-      });
-
       reject({
         status: 405,
         error: 'invalid_method',
@@ -186,15 +190,10 @@ export class RFC8252HTTPServer {
       });
       return;
     }
-    isGenuineOIDCResponse = true;
+    isAcceptedOIDCResponse = true;
 
     const oidcParams = url.toString();
     if (this.oidcParams !== undefined && this.oidcParams !== oidcParams) {
-      this.logger.emit('mongodb-oidc-plugin:oidc-callback-rejected', {
-        method: req.method,
-        hasBody,
-        errorCode: 'already_received_code',
-      });
       // This should not happen in practice...
       reject({
         status: 409,
@@ -215,7 +214,8 @@ export class RFC8252HTTPServer {
       reject({
         status: 200,
         // Standard params from https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2.1
-        error: ensureNQSChar(url.searchParams.get('error')),
+        error:
+          ensureNQSChar(url.searchParams.get('error')) ?? 'invalid_error_param',
         errorDescription: ensureNQSChar(
           url.searchParams.get('error_description')
         ),
@@ -230,9 +230,12 @@ export class RFC8252HTTPServer {
     // > authorization code from remaining in the browser history, or from
     // > inadvertently leaking in a referer header.
     void (async () => {
+      // `nonce` does not have any special security properties here, it is only
+      // there to avoid collisions with a redirect_url that happens to start
+      // with `/success`
       const nonce = (await promisify(randomBytes)(16)).toString('hex');
       res.status(303); // 'See Other', turns a potential POST into GET
-      res.set('Location', '/success/' + nonce);
+      res.set('Location', `/success/${nonce}`);
       res.send();
     })();
   };

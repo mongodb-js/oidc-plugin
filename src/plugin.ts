@@ -284,6 +284,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           await server.addRedirect(authCodeFlowUrl);
 
         signalCheck();
+
+        // Handler errors from opening a browser but do not await the Promise
+        // in case it only resolves when the browser exits (which is the case
+        // for the default `open` handler).
         const browserStatePromise = new Promise<never>((resolve, reject) => {
           this.openBrowser({ url: localUrl, signal })
             .then((browserHandle) => {
@@ -322,8 +326,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           browserStatePromise,
           signalPromise,
         ]);
-
+        // If we reached this point, we know that we have successfully opened
+        // a server listening on a local port and a browser and that the
+        // browser accessed the server. We do not want to fall back to another
+        // flow anymore, any error from here on is most likely a genuine
+        // authentication error.
         enableFallback = false;
+
         paramsUrl = await server.waitForOIDCParamsAndClose({ signal });
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

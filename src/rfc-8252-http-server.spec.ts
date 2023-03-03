@@ -309,5 +309,131 @@ describe('RFC8252HTTPServer', function () {
       }
       expect(server.listeningPort).to.equal(undefined);
     });
+
+    it('rejects a missing state parameter with a 403 error', async function () {
+      const params = new URLSearchParams([
+        ['foo', 'bar'],
+        ['baz', 'quux'],
+      ]);
+      url.search = params.toString();
+      const res = await fetch(url.toString());
+      expect(res.status).to.equal(403);
+    });
+
+    it('rejects an invalid state parameter with a 403 error', async function () {
+      const params = new URLSearchParams([
+        ['foo', 'bar'],
+        ['baz', 'quux'],
+        ['state', 'somevalue'],
+      ]);
+      url.search = params.toString();
+      const res = await fetch(url.toString());
+      expect(res.status).to.equal(403);
+    });
+
+    it('rejects the waitForOIDCParams promise when there is an OIDC error', async function () {
+      const conveniencePromise = server.waitForOIDCParamsAndClose();
+      conveniencePromise.catch(() => {
+        /* squelch UnhandledPromiseRejectionWarning */
+      });
+      const params = new URLSearchParams([
+        ['error', 'test_error'],
+        ['state', oidcStateParam],
+      ]);
+      url.search = params.toString();
+      const res = await fetch(url.toString());
+      expect(res.status).to.equal(200);
+      try {
+        await conveniencePromise;
+        expect.fail('missed exception');
+      } catch (err) {
+        expect(err.message).to.include('test_error');
+      }
+      expect(server.listeningPort).to.equal(undefined);
+    });
+  });
+
+  context('with a custom HTTP handler', function () {
+    let url: URL;
+    beforeEach(async function () {
+      server = new RFC8252HTTPServer({
+        redirectUrl: 'http://localhost:0/oidc-redirect',
+        logger,
+        oidcStateParam,
+        redirectServerRequestHandler(info) {
+          const { res, req, status, ...extra } = info;
+          res.statusCode = status;
+          res.setHeader('Content-Type', 'text/json');
+          res.end(JSON.stringify({ method: req.method, status, ...extra }));
+        },
+      });
+      await server.listen();
+      url = new URL(server.listeningRedirectUrl || '');
+    });
+
+    it('handles the success case', async function () {
+      const params = new URLSearchParams([
+        ['foo', 'bar'],
+        ['baz', 'quux'],
+        ['state', oidcStateParam],
+      ]);
+      url.search = params.toString();
+      const res = await fetch(url.toString());
+      expect(res.headers.get('Referrer-Policy')).to.equal('no-referrer');
+      expect(res.headers.get('Content-Security-Policy')).to.equal(
+        "default-src 'self'"
+      );
+      expect(res.url).to.include('/success/');
+      expect(await res.json()).to.deep.equal({
+        method: 'GET',
+        status: 200,
+        result: 'accepted',
+      });
+    });
+
+    it('handles the error case', async function () {
+      const params = new URLSearchParams([
+        ['error', 'error'],
+        ['error_description', 'error_description'],
+        ['error_uri', 'http://error_uri'],
+        ['state', oidcStateParam],
+      ]);
+      url.search = params.toString();
+      const res = await fetch(url.toString());
+      expect(await res.json()).to.deep.equal({
+        method: 'GET',
+        status: 200,
+        result: 'rejected',
+        error: 'error',
+        errorDescription: 'error_description',
+        errorURI: 'http://error_uri',
+      });
+    });
+
+    it('does not pass along non-spec-compliant error information', async function () {
+      const params = new URLSearchParams([
+        ['error', 'er"ror'],
+        ['error_description', 'error_"description'],
+        ['error_uri', 'not_a_uri'],
+        ['state', oidcStateParam],
+      ]);
+      url.search = params.toString();
+      const res = await fetch(url.toString());
+      expect(await res.json()).to.deep.equal({
+        method: 'GET',
+        status: 200,
+        result: 'rejected',
+        error: 'invalid_error_param',
+      });
+    });
+
+    it('handles a generic fallback case', async function () {
+      const res = await fetch(new URL('/notfound', url).toString());
+      expect(await res.json()).to.deep.equal({
+        method: 'GET',
+        status: 404,
+        result: 'unknown-url',
+      });
+    });
   });
 });

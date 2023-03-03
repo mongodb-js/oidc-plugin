@@ -12,6 +12,7 @@ export interface MongoDBOIDCLogEventsMap {
     method: string;
     hasBody: boolean;
     errorCode: string;
+    isAcceptedOIDCResponse: boolean;
   }) => void;
   'mongodb-oidc-plugin:unknown-url-accessed': (event: {
     method: string;
