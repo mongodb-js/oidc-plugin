@@ -285,7 +285,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
         signalCheck();
 
-        // Handler errors from opening a browser but do not await the Promise
+        // Handle errors from opening a browser but do not await the Promise
         // in case it only resolves when the browser exits (which is the case
         // for the default `open` handler).
         const browserStatePromise = new Promise<never>((resolve, reject) => {
