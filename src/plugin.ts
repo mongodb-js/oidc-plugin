@@ -171,7 +171,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         redirect_uris: [this.getRedirectURI()],
         response_types: ['code'],
         // At least Okta requires this:
-        token_endpoint_auth_method: 'client_secret_post',
+        token_endpoint_auth_method: serverMetadata.clientSecret
+          ? 'client_secret_post'
+          : 'none',
       },
     };
   }
