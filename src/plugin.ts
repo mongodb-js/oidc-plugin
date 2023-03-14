@@ -80,6 +80,17 @@ async function getDefaultOpenBrowser(): Promise<
 
 const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
 
+function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
+  return promise.catch((err) => {
+    // Tell the outer logic here to fallback to device auth flow if it is
+    // available if any of the steps above failed.
+    if (Object.isExtensible(err)) {
+      err[kEnableFallback] = true;
+    }
+    throw err;
+  });
+}
+
 /** @internal */
 export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private readonly options: Readonly<MongoDBOIDCPluginOptions>;
@@ -249,10 +260,30 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     };
   }
 
+  private verifyValidUrl(
+    serverOIDCMetadata: OIDCMechanismServerStep1,
+    key: keyof OIDCMechanismServerStep1
+  ): void {
+    // Verify that `key` refers to a valid URL. This is currently
+    // *not* an error that we allow to fall back from.
+    const value = serverOIDCMetadata[key];
+    if (!value || typeof value !== 'string') {
+      throw new MongoDBOIDCError(`'${key}' is missing`);
+    } else {
+      try {
+        new URL(value);
+      } catch {
+        throw new MongoDBOIDCError(`'${key}' is invalid: ${value}}`);
+      }
+    }
+  }
+
   private async authorizationCodeFlow(
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
+    this.verifyValidUrl(state.serverOIDCMetadata, 'authorizationEndpoint');
+
     const { scope, issuerParams, clientParams } =
       this.getInitialOIDCIssuerAndClientParams(state.serverOIDCMetadata);
 
@@ -270,11 +301,19 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       oidcStateParam,
     });
     let paramsUrl = '';
-    let enableFallback = true;
 
     try {
       await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
-        await Promise.race([server.listen(), signalPromise]);
+        // We mark the operations that we want to allow to result in a fallback
+        // to potentially less secure flows explicitly.
+        // Specifically, we only do so if we cannot open a local HTTP server
+        // or a local browser. Once we have done that, we do not want to fall
+        // back to another flow anymore, and any error from there on is most likely
+        // a genuine authentication error.
+        await Promise.race([
+          allowFallbackIfFailed(server.listen()),
+          signalPromise,
+        ]);
 
         const authCodeFlowUrl = client.authorizationUrl({
           scope,
@@ -290,31 +329,35 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         // Handle errors from opening a browser but do not await the Promise
         // in case it only resolves when the browser exits (which is the case
         // for the default `open` handler).
-        const browserStatePromise = new Promise<never>((resolve, reject) => {
-          this.openBrowser({ url: localUrl, signal })
-            .then((browserHandle) => {
-              browserHandle?.once('error', (err) => reject(err));
-              browserHandle?.once('exit', (code) => {
-                if (code !== 0)
-                  reject(
-                    new MongoDBOIDCError(
-                      `Opening browser failed with exit code ${code}`
-                    )
-                  );
-              });
-            })
-            .catch(reject);
-        });
+        const browserStatePromise = allowFallbackIfFailed(
+          new Promise<never>((resolve, reject) => {
+            this.openBrowser({ url: localUrl, signal })
+              .then((browserHandle) => {
+                browserHandle?.once('error', (err) => reject(err));
+                browserHandle?.once('exit', (code) => {
+                  if (code !== 0)
+                    reject(
+                      new MongoDBOIDCError(
+                        `Opening browser failed with exit code ${code}`
+                      )
+                    );
+                });
+              })
+              .catch(reject);
+          })
+        );
 
-        const timeout: Promise<never> = new Promise((resolve, reject) => {
-          if (this.options.openBrowserTimeout !== 0) {
-            setTimeout(
-              reject,
-              this.options.openBrowserTimeout ?? kDefaultOpenBrowserTimeout,
-              new MongoDBOIDCError('Opening browser timed out')
-            ).unref();
-          }
-        });
+        const timeout: Promise<never> = allowFallbackIfFailed(
+          new Promise((resolve, reject) => {
+            if (this.options.openBrowserTimeout !== 0) {
+              setTimeout(
+                reject,
+                this.options.openBrowserTimeout ?? kDefaultOpenBrowserTimeout,
+                new MongoDBOIDCError('Opening browser timed out')
+              ).unref();
+            }
+          })
+        );
 
         browserStatePromise.catch(() => {
           /* squelch UnhandledPromiseRejectionWarning */
@@ -328,23 +371,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           browserStatePromise,
           signalPromise,
         ]);
-        // If we reached this point, we know that we have successfully opened
-        // a server listening on a local port and a browser and that the
-        // browser accessed the server. We do not want to fall back to another
-        // flow anymore, any error from here on is most likely a genuine
-        // authentication error.
-        enableFallback = false;
 
         paramsUrl = await server.waitForOIDCParamsAndClose({ signal });
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      // Tell the outer logic here to fallback to device auth flow if it is
-      // available if any of the steps above failed.
-      if (Object.isExtensible(err)) {
-        err[kEnableFallback] = enableFallback;
-      }
-      throw err;
     } finally {
       await server.close();
     }
@@ -381,6 +410,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
+    this.verifyValidUrl(
+      state.serverOIDCMetadata,
+      'deviceAuthorizationEndpoint'
+    );
+
     const { scope, issuerParams, clientParams } =
       this.getInitialOIDCIssuerAndClientParams(state.serverOIDCMetadata);
 
