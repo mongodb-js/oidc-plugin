@@ -5,7 +5,7 @@ import type {
   OIDCMechanismServerStep1,
   OIDCRequestFunction,
 } from './';
-import { createMongoDBOIDCPlugin } from './';
+import { createMongoDBOIDCPlugin, hookLoggerToMongoLogWriter } from './';
 import { once } from 'events';
 import path from 'path';
 import { expect } from 'chai';
@@ -18,6 +18,9 @@ import {
   OIDCTestProvider,
 } from '../test/oidc-test-provider';
 import { AbortController } from './util';
+import { MongoLogWriter } from 'mongodb-log-writer';
+import { PassThrough } from 'stream';
+import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
 
 // Shorthand to avoid having to specify `principalName` and `abortSignal`
 // if they aren't being used in the first place.
@@ -49,6 +52,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
   this.timeout(90_000);
 
   let plugin: MongoDBOIDCPlugin;
+  let readLog: () => Promise<unknown[]>;
+  let logWriter: MongoLogWriter;
   let logger: EventEmitter;
   let provider: OIDCTestProvider;
   let originalElectronRunAsNode: string | undefined;
@@ -57,6 +62,23 @@ describe('OIDC plugin (local OIDC provider)', function () {
   beforeEach(async function () {
     provider = await OIDCTestProvider.create();
     logger = new EventEmitter();
+    const logStream = new PassThrough();
+    logWriter = new MongoLogWriter(
+      'logid',
+      null,
+      logStream,
+      () => new Date('2021-12-16T14:35:08.763Z')
+    );
+    hookLoggerToMongoLogWriter(logger, logWriter, 'test');
+    readLog = async () => {
+      await logWriter.flush();
+      const logRawData: string = logStream.setEncoding('utf8').read();
+      return logRawData
+        .split('\n')
+        .filter(Boolean)
+        .map((str) => JSON.parse(str));
+    };
+
     defaultOpts = {
       logger,
       // Opening browsers in CI systems can take a while...
@@ -95,6 +117,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(accessTokenContents.client_id).to.equal(
         provider.getMongodbOIDCDBInfo().clientId
       );
+      verifySuccessfulAuthCodeFlowLog(await readLog());
     });
 
     it('will re-use tokens while they are valid if no username was provided', async function () {
