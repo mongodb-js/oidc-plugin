@@ -80,10 +80,10 @@ async function getDefaultOpenBrowser(): Promise<
 
 const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
 
+// Tell the outer logic to fallback to another auth flow (if available)
+// if a step explicitly marked with this function failed.
 function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
   return promise.catch((err) => {
-    // Tell the outer logic here to fallback to device auth flow if it is
-    // available if any of the steps above failed.
     if (Object.isExtensible(err)) {
       err[kEnableFallback] = true;
     }
