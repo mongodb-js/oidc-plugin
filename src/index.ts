@@ -20,3 +20,5 @@ export type {
   MongoDBOIDCError,
   MongoDBOIDCLogEventsMap,
 } from './types';
+
+export { hookLoggerToMongoLogWriter, MongoLogWriter } from './log-hook';
