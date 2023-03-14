@@ -1,5 +1,6 @@
 import type {
   MongoDBOIDCPlugin,
+  MongoDBOIDCPluginOptions,
   OIDCAbortSignal,
   OIDCMechanismServerStep1,
   OIDCRequestFunction,
@@ -45,16 +46,22 @@ async function delay(ms: number) {
 }
 
 describe('OIDC plugin (local OIDC provider)', function () {
-  this.timeout(60_000);
+  this.timeout(90_000);
 
   let plugin: MongoDBOIDCPlugin;
   let logger: EventEmitter;
   let provider: OIDCTestProvider;
   let originalElectronRunAsNode: string | undefined;
+  let defaultOpts: MongoDBOIDCPluginOptions;
 
   beforeEach(async function () {
     provider = await OIDCTestProvider.create();
     logger = new EventEmitter();
+    defaultOpts = {
+      logger,
+      // Opening browsers in CI systems can take a while...
+      openBrowserTimeout: 60_000,
+    };
 
     // Needed so that the tests which use process.execPath to run
     // child processes can run Node.js scripts even in test-electron.
@@ -72,7 +79,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   context('with functioning auth code flow', function () {
     beforeEach(function () {
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         allowedFlows: ['auth-code'],
         openBrowser: functioningAuthCodeBrowserFlow,
       });
@@ -190,7 +197,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   context('when the user aborts an auth code flow', function () {
     beforeEach(function () {
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser: abortBrowserFlow,
         notifyDeviceFlow: () => Promise.reject(new Error('unreachable')),
       });
@@ -209,7 +216,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   context('with functioning device auth flow', function () {
     beforeEach(function () {
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         allowedFlows: ['device-auth'],
         notifyDeviceFlow: functioningDeviceAuthBrowserFlow,
       });
@@ -231,7 +238,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   context('with incomplete configuration', function () {
     it('skips auth code flow if browser interactions is disallowed', async function () {
       const plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser: false,
         notifyDeviceFlow() {
           throw new Error('device auth');
@@ -246,7 +253,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
     it('cannot auth if all prerequisites for flows are missing', async function () {
       const plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser: false,
         notifyDeviceFlow: undefined,
       });
@@ -261,7 +268,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   context('when an unusable redirect URL is provided', function () {
     beforeEach(function () {
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         redirectURI: 'http://192.0.2.1:1/', // fixed test IP address
         openBrowser: () => Promise.reject(new Error('unreachable')),
         notifyDeviceFlow: functioningDeviceAuthBrowserFlow,
@@ -304,7 +311,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       openBrowserAborted = true;
       pluginAbortController = new AbortController();
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser: ({ signal }) => {
           signal.addEventListener('abort', () => (openBrowserAborted = true));
           onBrowserOpenRequested?.();
@@ -347,7 +354,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
     it('handles failure to spawn browser', async function () {
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser() {
           const ee = new EventEmitter();
           setImmediate(() => ee.emit('error', new Error('could not spawn')));
@@ -364,7 +371,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
     it('handles browser exiting with non-zero exit code', async function () {
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser() {
           const ee = new EventEmitter();
           setImmediate(() => ee.emit('exit', 1));
@@ -389,7 +396,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       );
       await fs.rm(argvFile, { force: true });
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser: {
           command: `"${process.execPath}" "${fauxBrowserFile}"`,
         },
@@ -410,7 +417,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
     it('handles the browser not loading the URL', async function () {
       const fauxBrowserFile = path.resolve(__dirname, '..', 'test', 'sleep.js');
       plugin = createMongoDBOIDCPlugin({
-        logger,
+        ...defaultOpts,
         openBrowser: {
           command: `"${process.execPath}" "${fauxBrowserFile}"`,
           abortable: true,

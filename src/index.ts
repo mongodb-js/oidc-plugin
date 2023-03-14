@@ -6,6 +6,8 @@ export type {
   DeviceFlowInformation,
   OpenBrowserOptions,
   OpenBrowserReturnType,
+  RedirectServerRequestHandler,
+  RedirectServerRequestInfo,
 } from './api';
 
 export type {
