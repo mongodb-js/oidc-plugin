@@ -21,6 +21,7 @@ import { AbortController } from './util';
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
+import sinon from 'sinon';
 
 // Shorthand to avoid having to specify `principalName` and `abortSignal`
 // if they aren't being used in the first place.
@@ -453,6 +454,99 @@ describe('OIDC plugin (local OIDC provider)', function () {
       } catch (err) {
         expect(err.message).to.equal('Opening browser timed out');
       }
+    });
+  });
+
+  context('when the server announces invalid configurations', function () {
+    let notifyDeviceFlow: sinon.SinonStub;
+    let openBrowser: sinon.SinonStub;
+
+    beforeEach(function () {
+      notifyDeviceFlow = sinon
+        .stub()
+        .rejects(new Error('unreachable notifyDeviceFlow'));
+      openBrowser = sinon.stub().rejects(new Error('unreachable openBrowser'));
+    });
+
+    context('with all flows enabled', function () {
+      beforeEach(function () {
+        plugin = createMongoDBOIDCPlugin({
+          ...defaultOpts,
+          openBrowser,
+          notifyDeviceFlow,
+        });
+      });
+
+      it('does not fall back from auth code flow if the endpoint is invalid', async function () {
+        try {
+          await requestToken(plugin, {
+            clientId: 'asdf',
+            authorizationEndpoint: 'not a url',
+          });
+          expect.fail('missed exception');
+        } catch (err: any) {
+          expect(err.message).to.include("'authorizationEndpoint' is invalid");
+        }
+        expect(notifyDeviceFlow).to.not.have.been.called;
+        expect(openBrowser).to.not.have.been.called;
+      });
+
+      it('does not fall back from auth code flow if the endpoint is missing', async function () {
+        try {
+          await requestToken(plugin, {
+            clientId: 'asdf',
+          });
+          expect.fail('missed exception');
+        } catch (err: any) {
+          expect(err.message).to.include("'authorizationEndpoint' is missing");
+        }
+        expect(notifyDeviceFlow).to.not.have.been.called;
+        expect(openBrowser).to.not.have.been.called;
+      });
+    });
+
+    context('with only device auth flow enable', function () {
+      beforeEach(function () {
+        plugin = createMongoDBOIDCPlugin({
+          ...defaultOpts,
+          openBrowser,
+          notifyDeviceFlow,
+          allowedFlows: ['device-auth'],
+        });
+      });
+
+      it('fails if the device auth flow endpoint is invalid', async function () {
+        try {
+          await requestToken(plugin, {
+            clientId: 'asdf',
+            authorizationEndpoint: 'http://localhost/',
+            deviceAuthorizationEndpoint: 'not a url',
+          });
+          expect.fail('missed exception');
+        } catch (err: any) {
+          expect(err.message).to.include(
+            "'deviceAuthorizationEndpoint' is invalid"
+          );
+        }
+        expect(notifyDeviceFlow).to.not.have.been.called;
+        expect(openBrowser).to.not.have.been.called;
+      });
+
+      it('fails if the device auth flow endpoint is missing', async function () {
+        try {
+          await requestToken(plugin, {
+            clientId: 'asdf',
+            authorizationEndpoint: 'http://localhost/',
+          });
+          expect.fail('missed exception');
+        } catch (err: any) {
+          expect(err.message).to.include(
+            "'deviceAuthorizationEndpoint' is missing"
+          );
+        }
+        expect(notifyDeviceFlow).to.not.have.been.called;
+        expect(openBrowser).to.not.have.been.called;
+      });
     });
   });
 });
