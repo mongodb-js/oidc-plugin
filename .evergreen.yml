@@ -43,6 +43,9 @@ functions:
       params:
         working_dir: src
         shell: bash
+        env:
+          OKTA_TEST_CONFIG: ${okta_test_config}
+          OKTA_TEST_CREDENTIALS: ${okta_test_credentials}
         script: |
           set -e
           set -x
@@ -54,6 +57,9 @@ functions:
       params:
         working_dir: src
         shell: bash
+        env:
+          OKTA_TEST_CONFIG: ${okta_test_config}
+          OKTA_TEST_CREDENTIALS: ${okta_test_credentials}
         script: |
           set -e
           set -x
