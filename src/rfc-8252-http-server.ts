@@ -61,6 +61,10 @@ export class RFC8252HTTPServer {
       (resolve, reject) =>
         ([this.oidcParamsResolve, this.oidcParamsReject] = [resolve, reject])
     );
+    // Errors are handled by the caller of this instance.
+    this.oidcParamsPromise.catch(() => {
+      /* Suppress UnhandledPromiseRejectionWarning */
+    });
 
     this.expressApp = express();
     // Identity providers are not strictly required to use the query string to

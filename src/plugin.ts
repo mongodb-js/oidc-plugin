@@ -12,6 +12,7 @@ import {
   throwIfAborted,
   timeoutSignal,
   withAbortCheck,
+  withLock,
 } from './util';
 import type {
   IssuerMetadata,
@@ -78,6 +79,30 @@ async function getDefaultOpenBrowser(): Promise<
   };
 }
 
+/** @internal Exported for testing only */
+export function automaticRefreshTimeoutMS(
+  tokenSet: Pick<TokenSet, 'refresh_token' | 'expires_in'>
+): number | undefined {
+  // If the tokens expire in more than 1 minute, automatically register
+  // a refresh handler. (They should not expire in less; however,
+  // if we didn't handle that case, we'd run the risk of refreshing very
+  // frequently.) Refresh the token 5 minutes before expiration or
+  // halfway between now and the expiration time, whichever comes later
+  // (expires in 1 hour -> refresh in 55 min, expires in 5 min -> refresh in 2.5 min).
+  if (
+    tokenSet.refresh_token &&
+    tokenSet.expires_in &&
+    tokenSet.expires_in >= 60 /* 1 minute */
+  ) {
+    return (
+      Math.max(
+        tokenSet.expires_in - 300 /* 5 minutes */,
+        tokenSet.expires_in / 2
+      ) * 1000
+    );
+  }
+}
+
 const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
 
 function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
@@ -97,6 +122,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   public readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
   private readonly mapUserToAuthState = new Map<string, UserOIDCAuthState>();
   public readonly mongoClientOptions: MongoDBOIDCPlugin['mongoClientOptions'];
+  private readonly timers: {
+    // Only for testing
+    setTimeout: typeof setTimeout;
+    clearTimeout: typeof clearTimeout;
+  };
 
   constructor(options: Readonly<MongoDBOIDCPluginOptions>) {
     this.options = options;
@@ -107,6 +137,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         REFRESH_TOKEN_CALLBACK: this.refreshToken.bind(this),
       },
     };
+    this.timers = { setTimeout, clearTimeout };
   }
 
   // Is this flow supported and allowed?
@@ -237,26 +268,38 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     tokenSet: TokenSet,
     client: Client
   ) {
+    const timerDuration = automaticRefreshTimeoutMS(tokenSet);
+    let timer = timerDuration
+      ? this.timers.setTimeout(() => void tryRefresh(), timerDuration).unref()
+      : undefined;
+    const tryRefresh = withLock(async () => {
+      if (timer) {
+        this.timers.clearTimeout(timer);
+        timer = undefined;
+      }
+      // Only refresh this token set if it is the one currently
+      // being used.
+      if (state.currentTokenSet?.set !== tokenSet) return false;
+      try {
+        this.logger.emit('mongodb-oidc-plugin:refresh-started');
+        const refreshedTokens = await client.refresh(tokenSet);
+        // Check again to avoid race conditions.
+        if (state.currentTokenSet?.set === tokenSet) {
+          this.logger.emit('mongodb-oidc-plugin:refresh-succeeded');
+          this.storeTokenSet(state, refreshedTokens, client);
+          return true;
+        }
+      } catch (err: unknown) {
+        this.logger.emit('mongodb-oidc-plugin:refresh-failed', {
+          error: errorString(err),
+        });
+      }
+      return false;
+    });
+
     state.currentTokenSet = {
       set: tokenSet,
-      tryRefresh: async () => {
-        // Only refresh this token set if it is the one currently
-        // being used.
-        if (state.currentTokenSet?.set !== tokenSet) return false;
-        try {
-          const refreshedTokens = await client.refresh(tokenSet);
-          // Check again to avoid race conditions.
-          if (state.currentTokenSet?.set === tokenSet) {
-            this.storeTokenSet(state, refreshedTokens, client);
-            return true;
-          }
-        } catch (err: unknown) {
-          this.logger.emit('mongodb-oidc-plugin:refresh-failed', {
-            error: errorString(err),
-          });
-        }
-        return false;
-      },
+      tryRefresh,
     };
   }
 

@@ -149,6 +149,10 @@ export interface MongoDBOIDCPlugin {
   readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
 }
 
+/** @internal */
+export const publicPluginToInternalPluginMap_DoNotUseOutsideOfTests =
+  new WeakMap<MongoDBOIDCPlugin, MongoDBOIDCPluginImpl>();
+
 /**
  * Create a new OIDC plugin instance that can be passed to the Node.js MongoDB
  * driver's MongoClientOptions struct.
@@ -164,10 +168,15 @@ export function createMongoDBOIDCPlugin(
   options: Readonly<MongoDBOIDCPluginOptions>
 ): MongoDBOIDCPlugin {
   const plugin = new MongoDBOIDCPluginImpl({ ...options });
-  return {
+  const publicPlugin: MongoDBOIDCPlugin = {
     mongoClientOptions: plugin.mongoClientOptions,
     logger: plugin.logger,
   };
+  publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.set(
+    publicPlugin,
+    plugin
+  );
+  return publicPlugin;
 }
 
 /** @internal */

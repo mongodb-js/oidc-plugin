@@ -58,3 +58,23 @@ export function timeoutSignal(ms: number): AbortSignal {
   setTimeout(() => controller.abort(), ms).unref();
   return controller.signal;
 }
+
+// Ensure that only one call to the target `fn` is active at a time.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withLock<T extends (...args: any[]) => Promise<any>>(
+  fn: T
+): (...args: Parameters<T>) => ReturnType<T> {
+  // `lock` represents the completion of the current call to fn(), if any.
+  let lock: Promise<void> = Promise.resolve();
+  return (...args: Parameters<T>) => {
+    const result = lock
+      .then(() => fn(...args))
+      .finally(() => {
+        lock = Promise.resolve();
+      }) as ReturnType<T>;
+    lock = result.catch(() => {
+      /* handled by caller */
+    });
+    return result;
+  };
+}
