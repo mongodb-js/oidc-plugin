@@ -4,7 +4,6 @@ import { remote as webdriverIoRemote } from 'webdriverio';
 import express from 'express';
 import { createServer as createHTTPServer } from 'http';
 import OIDCProvider from 'oidc-provider';
-import type { IssuerMetadata } from 'openid-client';
 import { Issuer } from 'openid-client';
 import type { Server as HTTPServer } from 'http';
 import type { DeviceFlowInformation, OpenBrowserOptions } from '../src';
@@ -92,12 +91,24 @@ const oidcProviderConfig: Readonly<OIDCProviderConfiguration> = {
   issueRefreshToken: () => true,
 };
 
+export async function discoverIssuer(issuer: string) {
+  const { metadata } = await Issuer.discover(issuer);
+  return {
+    authorizationEndpoint: metadata.authorization_endpoint,
+    tokenEndpoint: metadata.token_endpoint,
+    deviceAuthorizationEndpoint: String(metadata.device_authorization_endpoint),
+  };
+}
+
 export class OIDCTestProvider {
   public accessTokenTTLSeconds: number | undefined;
   public refreshTokenTTLSeconds: number | undefined;
 
   public httpServer: HTTPServer;
-  private issuerMetadata: IssuerMetadata;
+  private issuerMetadata: Pick<
+    OIDCMechanismServerStep1,
+    'authorizationEndpoint' | 'deviceAuthorizationEndpoint' | 'tokenEndpoint'
+  >;
 
   private constructor() {
     this.httpServer = createHTTPServer();
@@ -133,9 +144,7 @@ export class OIDCTestProvider {
     (await import(oidcProviderExpressExamplePath)).default(app, oidcProvider);
     app.use(oidcProvider.callback());
 
-    this.issuerMetadata = (
-      await Issuer.discover(`http://localhost:${port}`)
-    ).metadata;
+    this.issuerMetadata = await discoverIssuer(`http://localhost:${port}`);
     return this;
   }
 
@@ -152,22 +161,21 @@ export class OIDCTestProvider {
     return {
       clientId: oidcClientConfig.client_id,
       clientSecret: oidcClientConfig.client_secret,
-
-      authorizationEndpoint: this.issuerMetadata.authorization_endpoint,
-      tokenEndpoint: this.issuerMetadata.token_endpoint,
-      deviceAuthorizationEndpoint: String(
-        this.issuerMetadata.device_authorization_endpoint
-      ),
+      ...this.issuerMetadata,
     };
   }
 }
 
 let canSpawnRegularBrowser = true;
-async function spawnBrowser(url: string): Promise<Browser> {
+async function spawnBrowser(
+  url: string,
+  hideLogs?: boolean // For when real credentials are used in a flow
+): Promise<Browser> {
   const options: RemoteOptions = {
     capabilities: { browserName: 'chrome' },
     waitforTimeout: 10_000,
     waitforInterval: 100,
+    logLevel: hideLogs ? 'error' : 'info',
   };
 
   // We set ELECTRON_RUN_AS_NODE=1 for tests so that we can use
@@ -261,10 +269,14 @@ async function dumpHtml(browser: Browser | undefined): Promise<void> {
   }
 }
 
-async function waitForTitle(browser: Browser, expected: string): Promise<void> {
+async function waitForTitle(
+  browser: Browser,
+  expected: string,
+  selector = 'h1'
+): Promise<void> {
   await browser.waitUntil(async () => {
-    const actual = (await browser.$('h1').getText()).trim();
-    if (actual !== expected) {
+    const actual = (await browser.$(selector).getText()).trim();
+    if (actual.toLowerCase() !== expected.toLowerCase()) {
       throw new Error(`Wanted title "${expected}", saw "${actual}"`);
     }
     return true;
@@ -274,20 +286,29 @@ async function waitForTitle(browser: Browser, expected: string): Promise<void> {
 async function ensureValue(
   browser: Browser,
   selector: string,
-  value: string | number
+  value: string | number,
+  normalize: (value: string) => string = (value) => value
 ): Promise<void> {
   const el = await browser.$(selector);
   await el.waitForDisplayed();
   await el.setValue(value);
   await browser.waitUntil(async () => {
     const actual = await el.getValue();
-    if (actual !== value) {
+    if (normalize(String(actual)) !== normalize(String(value))) {
       await el.setValue(value); // attempt to set value again before continuing
       throw new Error(
         `Wanted value "${value}" for element "${selector}", saw "${actual}"`
       );
     }
     return true;
+  });
+}
+
+async function waitForLocalhostRedirect(browser: Browser): Promise<void> {
+  await browser.waitUntil(async () => {
+    return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
+      new URL(await browser.getUrl()).hostname
+    );
   });
 }
 
@@ -304,6 +325,7 @@ export async function functioningAuthCodeBrowserFlow({
 
     await waitForTitle(browser, 'Authorize');
     await browser.$('button[type="submit"][autofocus]').click();
+    await waitForLocalhostRedirect(browser);
   } catch (err: unknown) {
     await dumpHtml(browser);
     throw err;
@@ -353,6 +375,59 @@ export async function functioningDeviceAuthBrowserFlow({
   } catch (err: unknown) {
     await dumpHtml(browser);
     throw err;
+  } finally {
+    await browser?.deleteSession();
+  }
+}
+
+interface UserPassCredentials {
+  username: string;
+  password: string;
+}
+
+export async function oktaBrowserAuthCodeFlow({
+  username,
+  password,
+  url,
+}: OpenBrowserOptions & UserPassCredentials): Promise<void> {
+  let browser: Browser | undefined;
+  try {
+    browser = await spawnBrowser(url, true);
+    await waitForTitle(browser, 'Sign In', 'h2');
+    await ensureValue(browser, 'input[name="identifier"]', username);
+    await ensureValue(browser, 'input[name="credentials.passcode"]', password);
+    await browser.$('input[type="submit"]').click();
+    await waitForLocalhostRedirect(browser);
+  } finally {
+    await browser?.deleteSession();
+  }
+}
+
+export async function oktaBrowserDeviceAuthFlow({
+  username,
+  password,
+  verificationUrl,
+  userCode,
+}: DeviceFlowInformation & UserPassCredentials): Promise<void> {
+  let browser: Browser | undefined;
+  try {
+    const normalizeUserCode = (str: string) => str.replace(/-/g, '');
+    browser = await spawnBrowser(verificationUrl, true);
+    await waitForTitle(browser, 'Activate your device', 'h2');
+    await ensureValue(
+      browser,
+      'input[name="userCode"]',
+      userCode,
+      normalizeUserCode
+    );
+    await browser.$('input[type="submit"]').click();
+
+    await waitForTitle(browser, 'Sign In', 'h2');
+    await ensureValue(browser, 'input[name="identifier"]', username);
+    await ensureValue(browser, 'input[name="credentials.passcode"]', password);
+    await browser.$('input[type="submit"]').click();
+
+    await waitForTitle(browser, 'Device activated', 'h2');
   } finally {
     await browser?.deleteSession();
   }
