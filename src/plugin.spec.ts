@@ -554,7 +554,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ).to.equal(undefined);
     });
   });
-    
+
   describe('Okta integration tests', function () {
     let metadata: OIDCMechanismServerStep1;
     let username: string;
