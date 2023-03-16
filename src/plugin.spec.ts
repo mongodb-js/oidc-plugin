@@ -13,9 +13,12 @@ import { EventEmitter } from 'events';
 import { promises as fs } from 'fs';
 import {
   abortBrowserFlow,
+  discoverIssuer,
   functioningAuthCodeBrowserFlow,
   functioningDeviceAuthBrowserFlow,
   OIDCTestProvider,
+  oktaBrowserAuthCodeFlow,
+  oktaBrowserDeviceAuthFlow,
 } from '../test/oidc-test-provider';
 import { AbortController } from './util';
 import { MongoLogWriter } from 'mongodb-log-writer';
@@ -549,6 +552,70 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: -10 })
       ).to.equal(undefined);
+    });
+  });
+    
+  describe('Okta integration tests', function () {
+    let metadata: OIDCMechanismServerStep1;
+    let username: string;
+    let password: string;
+    let issuer: string;
+    let clientId: string;
+    let validateToken: (token: Record<string, unknown>) => void;
+
+    // See test/okta-setup.md for instructions on generating test config and credentials
+    before(async function () {
+      if (!process.env.OKTA_TEST_CONFIG || !process.env.OKTA_TEST_CREDENTIALS) {
+        // eslint-disable-next-line no-console
+        console.info('skipping Okta integration tests due to missing config');
+        return this.skip();
+      }
+
+      [issuer, clientId] = JSON.parse(process.env.OKTA_TEST_CONFIG || '');
+      [username, password] = JSON.parse(
+        process.env.OKTA_TEST_CREDENTIALS || ''
+      );
+      metadata = {
+        clientId,
+        ...(await discoverIssuer(issuer)),
+        requestScopes: ['email'],
+      };
+      validateToken = (token) => {
+        expect(token.sub).to.equal(username);
+        expect(token.aud).to.equal(clientId);
+        expect(token.cid).to.equal(clientId);
+        expect(token.iss).to.equal(issuer);
+        expect((token.scp as string[]).sort()).to.deep.equal([
+          'email',
+          'offline_access',
+          'openid',
+        ]);
+        expect(token.groups).to.deep.equal(['root']);
+      };
+    });
+
+    it('can successfully authenticate with Okta using auth code flow', async function () {
+      plugin = createMongoDBOIDCPlugin({
+        ...defaultOpts,
+        allowedFlows: ['auth-code'],
+        openBrowser: (opts) =>
+          oktaBrowserAuthCodeFlow({ ...opts, username, password }),
+      });
+      const result = await requestToken(plugin, metadata);
+
+      validateToken(getJWTContents(result.accessToken));
+      verifySuccessfulAuthCodeFlowLog(await readLog());
+    });
+
+    it('can successfully authenticate with Okta using device auth flow', async function () {
+      plugin = createMongoDBOIDCPlugin({
+        ...defaultOpts,
+        allowedFlows: ['device-auth'],
+        notifyDeviceFlow: (opts) =>
+          oktaBrowserDeviceAuthFlow({ ...opts, username, password }),
+      });
+      const result = await requestToken(plugin, metadata);
+      validateToken(getJWTContents(result.accessToken));
     });
   });
 });
