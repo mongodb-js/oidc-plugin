@@ -221,4 +221,22 @@ export function hookLoggerToMongoLogWriter(
       }
     );
   });
+
+  emitter.on('mongodb-oidc-plugin:refresh-started', () => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_018),
+      `${contextPrefix}-oidc`,
+      'Token refresh attempt started'
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:refresh-succeeded', () => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_019),
+      `${contextPrefix}-oidc`,
+      'Token refresh attempt succeeded'
+    );
+  });
 }

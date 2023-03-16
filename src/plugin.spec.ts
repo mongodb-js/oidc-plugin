@@ -24,6 +24,9 @@ import { AbortController } from './util';
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
+import { automaticRefreshTimeoutMS } from './plugin';
+import sinon from 'sinon';
+import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 
 // Shorthand to avoid having to specify `principalName` and `abortSignal`
 // if they aren't being used in the first place.
@@ -55,7 +58,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   this.timeout(90_000);
 
   let plugin: MongoDBOIDCPlugin;
-  let readLog: () => Promise<unknown[]>;
+  let readLog: () => Promise<Record<string, unknown>[]>;
   let logWriter: MongoLogWriter;
   let logger: EventEmitter;
   let provider: OIDCTestProvider;
@@ -217,6 +220,75 @@ describe('OIDC plugin (local OIDC provider)', function () {
         'testuser2'
       );
       expect(result1).to.not.deep.equal(result2);
+    });
+
+    context('with automatic token refresh', function () {
+      it('will automatically refresh tokens', async function () {
+        const timeouts: {
+          fn: () => void;
+          timeout: number;
+          refed: boolean;
+          cleared: boolean;
+        }[] = [];
+        const setTimeout = sinon.stub().callsFake((fn, timeout) => {
+          const entry = {
+            fn,
+            timeout,
+            refed: true,
+            cleared: false,
+            ref() {
+              this.refed = true;
+            },
+            unref() {
+              this.refed = false;
+            },
+          };
+          timeouts.push(entry);
+          return entry;
+        });
+        const clearTimeout = sinon
+          .stub()
+          .callsFake((timer) => (timer.cleared = true));
+        (
+          publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.get(
+            plugin
+          ) as any
+        ).timers = { setTimeout, clearTimeout };
+
+        // Set to a fixed value, high enough to not expire and allow refreshes
+        provider.accessTokenTTLSeconds = 10000;
+        const result1 = await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo()
+        );
+
+        expect(timeouts).to.have.lengthOf(1);
+        expect(timeouts[0].refed).to.equal(false);
+        expect(timeouts[0].cleared).to.equal(false);
+        expect(timeouts[0].timeout).to.equal(9_700_000);
+        const refreshStartedEvent = once(
+          plugin.logger,
+          'mongodb-oidc-plugin:refresh-started'
+        );
+        timeouts[0].fn();
+        await refreshStartedEvent;
+        await once(plugin.logger, 'mongodb-oidc-plugin:refresh-succeeded');
+
+        const skipEvent = once(
+          plugin.logger,
+          'mongodb-oidc-plugin:skip-auth-attempt'
+        );
+        const result2 = await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo()
+        );
+        expect(result1).to.not.deep.equal(result2);
+        expect(getJWTContents(result1.accessToken).sub).to.equal(
+          getJWTContents(result2.accessToken).sub
+        );
+
+        expect(await skipEvent).to.deep.equal([{ reason: 'not-expired' }]);
+      });
     });
   });
 
@@ -456,6 +528,30 @@ describe('OIDC plugin (local OIDC provider)', function () {
       } catch (err) {
         expect(err.message).to.equal('Opening browser timed out');
       }
+    });
+  });
+
+  describe('automaticRefreshTimeoutMS', function () {
+    it('returns the correct automatic refresh timeout', function () {
+      expect(automaticRefreshTimeoutMS({})).to.equal(undefined);
+      expect(automaticRefreshTimeoutMS({ expires_in: 10000 })).to.equal(
+        undefined
+      );
+      expect(
+        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 10000 })
+      ).to.equal(9700000);
+      expect(
+        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 100 })
+      ).to.equal(50000);
+      expect(
+        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 10 })
+      ).to.equal(undefined);
+      expect(
+        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 0 })
+      ).to.equal(undefined);
+      expect(
+        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: -10 })
+      ).to.equal(undefined);
     });
   });
 
