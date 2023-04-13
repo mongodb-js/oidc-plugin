@@ -4,7 +4,6 @@ import { remote as webdriverIoRemote } from 'webdriverio';
 import express from 'express';
 import { createServer as createHTTPServer } from 'http';
 import OIDCProvider from 'oidc-provider';
-import { Issuer } from 'openid-client';
 import type { Server as HTTPServer } from 'http';
 import type { DeviceFlowInformation, OpenBrowserOptions } from '../src';
 
@@ -18,8 +17,6 @@ import type { OIDCMechanismServerStep1 } from '../src';
 
 const oidcClientConfig: Readonly<OIDCClientMetadata> = {
   client_id: 'zELcpfANLqY7Oqas',
-  client_secret:
-    'TQV5U29k1gHibH5bx1layBo0OSAvAbRT3UYW3EWrSYBB5swxjVfWUa1BS8lqzxG/0v9wruMcrGadany3',
   grant_types: [
     'refresh_token',
     'authorization_code',
@@ -27,6 +24,7 @@ const oidcClientConfig: Readonly<OIDCClientMetadata> = {
   ],
   redirect_uris: ['http://localhost:27097/redirect'],
   application_type: 'native',
+  token_endpoint_auth_method: 'none',
 };
 
 const oidcProviderConfig: Readonly<OIDCProviderConfiguration> = {
@@ -91,24 +89,12 @@ const oidcProviderConfig: Readonly<OIDCProviderConfiguration> = {
   issueRefreshToken: () => true,
 };
 
-export async function discoverIssuer(issuer: string) {
-  const { metadata } = await Issuer.discover(issuer);
-  return {
-    authorizationEndpoint: metadata.authorization_endpoint,
-    tokenEndpoint: metadata.token_endpoint,
-    deviceAuthorizationEndpoint: String(metadata.device_authorization_endpoint),
-  };
-}
-
 export class OIDCTestProvider {
   public accessTokenTTLSeconds: number | undefined;
   public refreshTokenTTLSeconds: number | undefined;
 
   public httpServer: HTTPServer;
-  private issuerMetadata: Pick<
-    OIDCMechanismServerStep1,
-    'authorizationEndpoint' | 'deviceAuthorizationEndpoint' | 'tokenEndpoint'
-  >;
+  private issuer: string;
 
   private constructor() {
     this.httpServer = createHTTPServer();
@@ -144,7 +130,7 @@ export class OIDCTestProvider {
     (await import(oidcProviderExpressExamplePath)).default(app, oidcProvider);
     app.use(oidcProvider.callback());
 
-    this.issuerMetadata = await discoverIssuer(`http://localhost:${port}`);
+    this.issuer = `http://localhost:${port}`;
     return this;
   }
 
@@ -160,8 +146,7 @@ export class OIDCTestProvider {
   public getMongodbOIDCDBInfo(): OIDCMechanismServerStep1 {
     return {
       clientId: oidcClientConfig.client_id,
-      clientSecret: oidcClientConfig.client_secret,
-      ...this.issuerMetadata,
+      issuer: this.issuer,
     };
   }
 }

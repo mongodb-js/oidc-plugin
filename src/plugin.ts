@@ -14,12 +14,7 @@ import {
   withAbortCheck,
   withLock,
 } from './util';
-import type {
-  IssuerMetadata,
-  ClientMetadata,
-  TokenSet,
-  Client,
-} from 'openid-client';
+import type { TokenSet, Client, BaseClient } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
 import open from 'open';
@@ -183,13 +178,21 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return this.options.redirectURI ?? 'http://localhost:27097/redirect';
   }
 
-  private getInitialOIDCIssuerAndClientParams(
+  private async getOIDCClient(
     serverMetadata: OIDCMechanismServerStep1
-  ): {
+  ): Promise<{
     scope: string;
-    issuerParams: IssuerMetadata;
-    clientParams: ClientMetadata;
-  } {
+    issuer: Issuer;
+    client: BaseClient;
+  }> {
+    const issuer = await Issuer.discover(serverMetadata.issuer);
+    const client = new issuer.Client({
+      client_id: serverMetadata.clientId,
+      redirect_uris: [this.getRedirectURI()],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+    });
+
     return {
       scope: [
         ...new Set([
@@ -198,25 +201,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           ...(serverMetadata.requestScopes ?? []),
         ]),
       ].join(' '),
-      issuerParams: {
-        authorization_endpoint: serverMetadata.authorizationEndpoint,
-        token_endpoint: serverMetadata.tokenEndpoint,
-        device_authorization_endpoint:
-          serverMetadata.deviceAuthorizationEndpoint,
-        // Required by the TS definitions, but we just don't have this data
-        // at this point. We re-define it later where necessary.
-        issuer: '',
-      },
-      clientParams: {
-        client_id: serverMetadata.clientId,
-        client_secret: serverMetadata.clientSecret,
-        redirect_uris: [this.getRedirectURI()],
-        response_types: ['code'],
-        // At least Okta requires this:
-        token_endpoint_auth_method: serverMetadata.clientSecret
-          ? 'client_secret_post'
-          : 'none',
-      },
+      issuer,
+      client,
     };
   }
 
@@ -325,16 +311,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
-    this.verifyValidUrl(state.serverOIDCMetadata, 'authorizationEndpoint');
+    this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
 
-    const { scope, issuerParams, clientParams } =
-      this.getInitialOIDCIssuerAndClientParams(state.serverOIDCMetadata);
+    const { scope, client } = await this.getOIDCClient(
+      state.serverOIDCMetadata
+    );
 
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
-
-    let issuer = new Issuer(issuerParams);
-    let client = new issuer.Client(clientParams);
 
     const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
     const server = new RFC8252HTTPServer({
@@ -422,26 +406,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     const params = client.callbackParams(paramsUrl);
-    // The oidc-client library requires `issuer` to be set here; we did not
-    // set it when we assembled the original `issuerParams` (because it was
-    // not available as information), but we should have received it from the
-    // callback parameters and can set it here.
-    issuerParams.issuer = String(params.iss);
-    issuer = new Issuer(issuerParams);
-    client = new issuer.Client(clientParams);
-    client.validateIdToken = () => {
-      // Do not attempt to validate the ID token. The client library would
-      // do this by default, but we do not have access to the necessary
-      // JWKS here. This is in direct conflict with the OIDC spec (!!)
-      // https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation:
-      //
-      // > Clients MUST validate the ID Token in the Token Response in the following manner: [...]
-      //
-      // We accept this because for the purposes of this plugin, we do not
-      // interact with the identity token, nor do we actually consume the
-      // access token. We leave it to the the server to validate that the token is
-      // valid, refers to the right identity, and comes from the right source.
-    };
     const tokenSet = await client.callback(this.getRedirectURI(), params, {
       code_verifier: codeVerifier,
       state: oidcStateParam,
@@ -453,24 +417,16 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
-    this.verifyValidUrl(
-      state.serverOIDCMetadata,
-      'deviceAuthorizationEndpoint'
+    this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
+
+    const { scope, client } = await this.getOIDCClient(
+      state.serverOIDCMetadata
     );
 
-    const { scope, issuerParams, clientParams } =
-      this.getInitialOIDCIssuerAndClientParams(state.serverOIDCMetadata);
-
-    const issuer = new Issuer(issuerParams);
-    const client = new issuer.Client(clientParams);
-
-    client.validateIdToken = () => {
-      /* see above */
-    };
     await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
       const deviceFlowHandle = await Promise.race([
         client.deviceAuthorization({
-          client_id: clientParams.client_id,
+          client_id: client.metadata.client_id,
           scope,
         }),
         signalPromise,

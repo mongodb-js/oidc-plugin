@@ -67,11 +67,8 @@ export interface TypedEventEmitter<EventMap extends object> {
  * @public
  */
 export interface OIDCMechanismServerStep1 {
-  authorizationEndpoint?: string;
-  tokenEndpoint?: string;
-  deviceAuthorizationEndpoint?: string;
+  issuer: string;
   clientId: string;
-  clientSecret?: string;
   requestScopes?: string[];
 }
 
