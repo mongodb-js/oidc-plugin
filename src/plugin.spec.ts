@@ -2,6 +2,7 @@ import type {
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,
   OIDCAbortSignal,
+  OIDCClientInfo,
   OIDCMechanismServerStep1,
   OIDCRequestFunction,
 } from './';
@@ -35,10 +36,12 @@ function requestToken(
   principalName?: string | undefined,
   abortSignal?: OIDCAbortSignal | number
 ): ReturnType<OIDCRequestFunction> {
+  const clientInfo: OIDCClientInfo = { principalName };
+  if (typeof abortSignal === 'number') clientInfo.timeoutSeconds = abortSignal;
+  else if (abortSignal) clientInfo.timeoutContext = abortSignal;
   return plugin.mongoClientOptions.authMechanismProperties.REQUEST_TOKEN_CALLBACK(
-    principalName,
-    oidcParams,
-    abortSignal
+    clientInfo,
+    oidcParams
   );
 }
 

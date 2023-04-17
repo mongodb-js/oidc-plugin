@@ -1,6 +1,7 @@
 import type {
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
+  OIDCClientInfo,
   OIDCMechanismServerStep1,
   OIDCRequestTokenResult,
   TypedEventEmitter,
@@ -129,7 +130,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     this.mongoClientOptions = {
       authMechanismProperties: {
         REQUEST_TOKEN_CALLBACK: this.requestToken.bind(this),
-        REFRESH_TOKEN_CALLBACK: this.refreshToken.bind(this),
+        REFRESH_TOKEN_CALLBACK: this.requestToken.bind(this),
       },
     };
     this.timers = { setTimeout, clearTimeout };
@@ -550,11 +551,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   public async requestToken(
-    principalName: string | undefined,
-    serverMetadata: OIDCMechanismServerStep1,
-    driverAbortSignal?: OIDCAbortSignal | number
+    clientInfo: OIDCClientInfo,
+    serverMetadata: OIDCMechanismServerStep1
   ): Promise<OIDCRequestTokenResult> {
-    const state = this.getAuthState(serverMetadata, principalName);
+    const state = this.getAuthState(serverMetadata, clientInfo.principalName);
 
     if (state.currentAuthAttempt) {
       return await state.currentAuthAttempt;
@@ -564,9 +564,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // for Node.js 14.x) to pass in an actual AbortSignal here. For
     // compatibility with the 5.x driver/AbortSignal-less-Node.js, we accept
     // a timeout in milliseconds as well.
-    if (typeof driverAbortSignal === 'number') {
-      driverAbortSignal = timeoutSignal(driverAbortSignal);
-    }
+    const driverAbortSignal =
+      clientInfo.timeoutContext ??
+      (clientInfo.timeoutSeconds
+        ? timeoutSignal(clientInfo.timeoutSeconds * 1000)
+        : undefined);
 
     const newAuthAttempt = this.initiateAuthAttempt(state, driverAbortSignal);
     state.currentAuthAttempt = newAuthAttempt;
@@ -575,19 +577,5 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         state.currentAuthAttempt = null;
     });
     return newAuthAttempt;
-  }
-
-  public async refreshToken(
-    principalName: string | undefined,
-    serverMetadata: OIDCMechanismServerStep1,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    previousResult: OIDCRequestTokenResult,
-    driverAbortSignal?: OIDCAbortSignal | number
-  ): Promise<OIDCRequestTokenResult> {
-    return await this.requestToken(
-      principalName,
-      serverMetadata,
-      driverAbortSignal
-    );
   }
 }

@@ -83,13 +83,22 @@ export interface OIDCRequestTokenResult {
 }
 
 /**
+ * A copy of the Node.js driver's `OIDCClientInfo`
+ * @public
+ */
+export interface OIDCClientInfo {
+  principalName?: string;
+  timeoutSeconds?: number;
+  timeoutContext?: OIDCAbortSignal;
+}
+
+/**
  * A copy of the Node.js driver's `OIDCRequestFunction`
  * @public
  */
 export type OIDCRequestFunction = (
-  principalName: string | undefined,
-  idl: OIDCMechanismServerStep1,
-  abortSignal?: OIDCAbortSignal | number
+  clientInfo: OIDCClientInfo,
+  serverInfo: OIDCMechanismServerStep1
 ) => Promise<OIDCRequestTokenResult>;
 
 /**
@@ -97,10 +106,9 @@ export type OIDCRequestFunction = (
  * @public
  */
 export type OIDCRefreshFunction = (
-  principalName: string | undefined,
-  idl: OIDCMechanismServerStep1,
-  result: OIDCRequestTokenResult,
-  abortSignal?: OIDCAbortSignal | number
+  clientInfo: OIDCClientInfo,
+  serverInfo: OIDCMechanismServerStep1,
+  tokenResult: OIDCRequestTokenResult
 ) => Promise<OIDCRequestTokenResult>;
 
 /** @public */

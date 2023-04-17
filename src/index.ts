@@ -12,6 +12,7 @@ export type {
 
 export type {
   TypedEventEmitter,
+  OIDCClientInfo,
   OIDCRefreshFunction,
   OIDCRequestFunction,
   OIDCMechanismServerStep1,
