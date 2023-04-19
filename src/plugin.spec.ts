@@ -2,6 +2,7 @@ import type {
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,
   OIDCAbortSignal,
+  OIDCClientInfo,
   OIDCMechanismServerStep1,
   OIDCRequestFunction,
 } from './';
@@ -13,7 +14,6 @@ import { EventEmitter } from 'events';
 import { promises as fs } from 'fs';
 import {
   abortBrowserFlow,
-  discoverIssuer,
   functioningAuthCodeBrowserFlow,
   functioningDeviceAuthBrowserFlow,
   OIDCTestProvider,
@@ -36,10 +36,12 @@ function requestToken(
   principalName?: string | undefined,
   abortSignal?: OIDCAbortSignal | number
 ): ReturnType<OIDCRequestFunction> {
+  const clientInfo: OIDCClientInfo = { principalName };
+  if (typeof abortSignal === 'number') clientInfo.timeoutSeconds = abortSignal;
+  else if (abortSignal) clientInfo.timeoutContext = abortSignal;
   return plugin.mongoClientOptions.authMechanismProperties.REQUEST_TOKEN_CALLBACK(
-    principalName,
-    oidcParams,
-    abortSignal
+    clientInfo,
+    oidcParams
   );
 }
 
@@ -555,11 +557,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
         try {
           await requestToken(plugin, {
             clientId: 'asdf',
-            authorizationEndpoint: 'not a url',
+            issuer: 'not a url',
           });
           expect.fail('missed exception');
         } catch (err: any) {
-          expect(err.message).to.include("'authorizationEndpoint' is invalid");
+          expect(err.message).to.include("'issuer' is invalid");
         }
         expect(notifyDeviceFlow).to.not.have.been.called;
         expect(openBrowser).to.not.have.been.called;
@@ -569,54 +571,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
         try {
           await requestToken(plugin, {
             clientId: 'asdf',
+            issuer: '',
           });
           expect.fail('missed exception');
         } catch (err: any) {
-          expect(err.message).to.include("'authorizationEndpoint' is missing");
-        }
-        expect(notifyDeviceFlow).to.not.have.been.called;
-        expect(openBrowser).to.not.have.been.called;
-      });
-    });
-
-    context('with only device auth flow enable', function () {
-      beforeEach(function () {
-        plugin = createMongoDBOIDCPlugin({
-          ...defaultOpts,
-          openBrowser,
-          notifyDeviceFlow,
-          allowedFlows: ['device-auth'],
-        });
-      });
-
-      it('fails if the device auth flow endpoint is invalid', async function () {
-        try {
-          await requestToken(plugin, {
-            clientId: 'asdf',
-            authorizationEndpoint: 'http://localhost/',
-            deviceAuthorizationEndpoint: 'not a url',
-          });
-          expect.fail('missed exception');
-        } catch (err: any) {
-          expect(err.message).to.include(
-            "'deviceAuthorizationEndpoint' is invalid"
-          );
-        }
-        expect(notifyDeviceFlow).to.not.have.been.called;
-        expect(openBrowser).to.not.have.been.called;
-      });
-
-      it('fails if the device auth flow endpoint is missing', async function () {
-        try {
-          await requestToken(plugin, {
-            clientId: 'asdf',
-            authorizationEndpoint: 'http://localhost/',
-          });
-          expect.fail('missed exception');
-        } catch (err: any) {
-          expect(err.message).to.include(
-            "'deviceAuthorizationEndpoint' is missing"
-          );
+          expect(err.message).to.include("'issuer' is missing");
         }
         expect(notifyDeviceFlow).to.not.have.been.called;
         expect(openBrowser).to.not.have.been.called;
@@ -657,7 +616,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
     let validateToken: (token: Record<string, unknown>) => void;
 
     // See test/okta-setup.md for instructions on generating test config and credentials
-    before(async function () {
+    before(function () {
       if (!process.env.OKTA_TEST_CONFIG || !process.env.OKTA_TEST_CREDENTIALS) {
         // eslint-disable-next-line no-console
         console.info('skipping Okta integration tests due to missing config');
@@ -670,7 +629,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       );
       metadata = {
         clientId,
-        ...(await discoverIssuer(issuer)),
+        issuer,
         requestScopes: ['email'],
       };
       validateToken = (token) => {

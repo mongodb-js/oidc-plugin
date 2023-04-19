@@ -46,9 +46,16 @@ functions:
         env:
           OKTA_TEST_CONFIG: ${okta_test_config}
           OKTA_TEST_CREDENTIALS: ${okta_test_credentials}
+          DISTRO_ID: ${distro_id}
         script: |
           set -e
           set -x
+
+          # Google Chrome exists on the Ubuntu hosts but is very slow to start,
+          # so webdriverio times out when trying to start it *but* then later
+          # never cleans up the spawned chrome process so that the mocha process
+          # just keeps timing out.
+          if echo "${distro_id}" | grep -q ubuntu; then export SKIP_REGULAR_BROWSER_TESTING=true; fi
 
           . .evergreen/use-node.sh
           npm run test-ci
@@ -60,6 +67,7 @@ functions:
         env:
           OKTA_TEST_CONFIG: ${okta_test_config}
           OKTA_TEST_CREDENTIALS: ${okta_test_credentials}
+          DISTRO_ID: ${distro_id}
         script: |
           set -e
           set -x
