@@ -151,7 +151,7 @@ export class OIDCTestProvider {
   }
 }
 
-let canSpawnRegularBrowser = true;
+let canSpawnRegularBrowser = !process.env.SKIP_REGULAR_BROWSER_TESTING;
 async function spawnBrowser(
   url: string,
   hideLogs?: boolean // For when real credentials are used in a flow
