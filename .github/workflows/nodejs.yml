@@ -15,7 +15,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node-version: [14.x, 16.x, 18.x, latest]
+        # TODO(MONGOSH-1437): Bring back Node.js 20/latest after removing git dependency
+        node-version: [14.x, 16.x, 18.x]
     runs-on: ${{matrix.os}}
     steps:
       - uses: actions/checkout@v2
