@@ -86,6 +86,8 @@ async function fetchBrowser({ url }: OpenBrowserOptions): Promise<void> {
 }
 
 describe('integration test with mongod', function () {
+  this.timeout(90_000);
+
   let tmpdir: string;
   let mongodExecutable: string;
 
@@ -102,7 +104,7 @@ describe('integration test with mongod', function () {
   });
 
   after(async function () {
-    await fs.rm(tmpdir, { recursive: true, force: true });
+    if (tmpdir) await fs.rm(tmpdir, { recursive: true, force: true });
   });
 
   context('can authenticate with browser-based IdP', function () {
@@ -162,6 +164,11 @@ describe('integration test with mongod', function () {
     let connectionString: string;
 
     before(async function () {
+      if (+process.version.slice(1).split('.')[0] < 16) {
+        // JWK support for Node.js KeyObject.export() is only Node.js 16+
+        // but the OIDCMockProvider implementation needs it.
+        return this.skip();
+      }
       provider = await OIDCMockProvider.create({
         getTokenPayload() {
           return {
@@ -195,7 +202,7 @@ describe('integration test with mongod', function () {
     });
 
     after(async function () {
-      await Promise.all([stop(), provider.close()]);
+      await Promise.all([stop?.(), provider?.close?.()]);
     });
 
     it('can successfully authenticate with a fake Auth Code Flow', async function () {
