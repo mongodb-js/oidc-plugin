@@ -60,11 +60,11 @@ async function spawnMongod(
       // which port it chose.
       const pt = new PassThrough();
       proc.stdout?.pipe(pt);
+      if (process.env.CI) proc.stdout?.pipe(process.stderr);
       for await (const l of readline({ input: pt })) {
         const line = JSON.parse(l);
         if (line.id === 23016 /* Waiting for connections */) {
-          proc.stdout.unpipe(); // Ignore all further output
-          proc.stdout.resume();
+          proc.stdout.unpipe(pt); // Ignore all further output
           return line.attr.port;
         }
       }
