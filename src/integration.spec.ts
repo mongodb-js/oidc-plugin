@@ -42,8 +42,7 @@ async function spawnMongod(
       '--dbpath',
       dbdir,
       '--port',
-      '0',
-      '--ipv6'
+      '0'
     ],
     {
       cwd: dbdir,
@@ -77,7 +76,7 @@ async function spawnMongod(
       await procExit;
       return;
     },
-    `mongodb://localhost:${port}/?authMechanism=MONGODB-OIDC`,
+    `mongodb://127.0.0.1:${port}/?authMechanism=MONGODB-OIDC`,
   ];
 }
 
