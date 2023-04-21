@@ -27,7 +27,7 @@ jobs:
         run: node -e 'process.exitCode = +process.version.startsWith("v14")' || npm install -g npm@8
         # the oidc-provider package we use doesn't list Node.js 20 as supported
       - name: Install Dependencies
-        run: npm ci --ignore-engines --verbose
+        run: npm ci --ignore-engines
       - name: Test
         run: npm run test-ci
   check:
@@ -47,6 +47,6 @@ jobs:
       - name: Install npm@8 for Node.js 14
         run: node -e 'process.exitCode = +process.version.startsWith("v14")' || npm install -g npm@8
       - name: Install Dependencies
-        run: npm ci --ignore-engines --verbose
+        run: npm ci --ignore-engines
       - name: Check
         run: npm run check
