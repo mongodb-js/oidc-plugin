@@ -42,7 +42,7 @@ async function spawnMongod(
       '--dbpath',
       dbdir,
       '--port',
-      '0'
+      '0',
     ],
     {
       cwd: dbdir,
