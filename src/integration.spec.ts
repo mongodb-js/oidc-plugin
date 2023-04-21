@@ -43,6 +43,7 @@ async function spawnMongod(
       dbdir,
       '--port',
       '0',
+      '--ipv6'
     ],
     {
       cwd: dbdir,
@@ -92,6 +93,12 @@ describe('integration test with mongod', function () {
   let mongodExecutable: string;
 
   before(async function () {
+    // TODO(MONGOSH-1436): This is only because latest-alpha is very outdated for macos and Windows, this
+    // can be removed after 7.0.0-rc0. `true as unknown` makes TS happy.
+    if (process.platform !== 'linux' && (true as unknown)) {
+      return this.skip();
+    }
+
     // Create a temporary directory, download mongodb
     tmpdir = path.join(os.tmpdir(), `test-mongodb-oidc-${Date.now()}`);
     await fs.mkdir(tmpdir, { recursive: true });
