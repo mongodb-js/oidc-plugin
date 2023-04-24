@@ -22,7 +22,6 @@ import type {
 } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
-import open from 'open';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
@@ -73,6 +72,8 @@ async function getDefaultOpenBrowser(): Promise<
   }
   // Otherwise, use open() from npm.
   return async ({ url }) => {
+    // 'open' 9.x+ is ESM-only.
+    const open = (await import('open')).default;
     const child = await open(url);
     child.unref();
     return child;
