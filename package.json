@@ -72,7 +72,7 @@
     "download": "^8.0.0",
     "electron": "^23.1.2",
     "electron-mocha": "^11.0.2",
-    "eslint": "^7.25.0",
+    "eslint": "^8.39.0",
     "eslint-config-prettier": "^8.7.0",
     "eslint-plugin-mocha": "^10.1.0",
     "gen-esm-wrapper": "^1.1.0",
