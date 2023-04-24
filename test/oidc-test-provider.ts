@@ -15,6 +15,25 @@ import path from 'path';
 import { once } from 'events';
 import type { OIDCMechanismServerStep1 } from '../src';
 
+{
+  // monkey-patch the test oidc provider so that it returns 'typ: JWT'
+  // tokens because the server does not accept any other value for 'typ'.
+  // For testing purposes, this should not be an issue.
+  // https://github.com/10gen/mongo/blob/041756701e6202ff3054106bf9ae9b966e55dbb2/src/mongo/crypto/jws_validated_token.cpp#L109
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const _JWT = require('oidc-provider/lib/helpers/jwt');
+  const _sign = _JWT.sign;
+  _JWT.sign = (
+    payload: unknown,
+    key: unknown,
+    alg: unknown,
+    options: Record<string, unknown> = {}
+  ) => {
+    if (options.typ === 'at+jwt') options = { ...options, typ: 'JWT' };
+    return _sign.call(this, payload, key, alg, options);
+  };
+}
+
 const oidcClientConfig: Readonly<OIDCClientMetadata> = {
   client_id: 'zELcpfANLqY7Oqas',
   grant_types: [
@@ -39,6 +58,12 @@ const oidcProviderConfig: Readonly<OIDCProviderConfiguration> = {
     email: ['email', 'email_verified'],
     phone: ['phone_number', 'phone_number_verified'],
     profile: ['birthdate'],
+    mongodbGroups: ['groups'],
+  },
+  extraTokenClaims() {
+    return {
+      groups: ['testgroup'], // MongoDB uses extra claims to assign roles to users
+    };
   },
   cookies: {
     keys: ['asdfghjkilmnop'],
@@ -57,13 +82,14 @@ const oidcProviderConfig: Readonly<OIDCProviderConfiguration> = {
         audience: 'resource-server-audience-value',
         accessTokenFormat: 'jwt',
         jwt: {
-          sign: { alg: 'ES256' },
+          sign: { alg: 'RS256' },
         },
       }),
     },
   },
   jwks: {
     keys: [
+      // MongoDB only supports RSA keys at the time of writing
       {
         d: 'VEZOsY07JTFzGTqv6cC2Y32vsfChind2I_TTuvV225_-0zrSej3XLRg8iE_u0-3GSgiGi4WImmTwmEgLo4Qp3uEcxCYbt4NMJC7fwT2i3dfRZjtZ4yJwFl0SIj8TgfQ8ptwZbFZUlcHGXZIr4nL8GXyQT0CK8wy4COfmymHrrUoyfZA154ql_OsoiupSUCRcKVvZj2JHL2KILsq_sh_l7g2dqAN8D7jYfJ58MkqlknBMa2-zi5I0-1JUOwztVNml_zGrp27UbEU60RqV3GHjoqwI6m01U7K0a8Q_SQAKYGqgepbAYOA-P4_TLl5KC4-WWBZu_rVfwgSENwWNEhw8oQ',
         dp: 'E1Y-SN4bQqX7kP-bNgZ_gEv-pixJ5F_EGocHKfS56jtzRqQdTurrk4jIVpI-ZITA88lWAHxjD-OaoJUh9Jupd_lwD5Si80PyVxOMI2xaGQiF0lbKJfD38Sh8frRpgelZVaK_gm834B6SLfxKdNsP04DsJqGKktODF_fZeaGFPH0',
@@ -75,14 +101,6 @@ const oidcProviderConfig: Readonly<OIDCProviderConfiguration> = {
         q: '3I1qeEDslZFB8iNfpKAdWtz_Wzm6-jayT_V6aIvhvMj5mnU-Xpj75zLPQSGa9wunMlOoZW9w1wDO1FVuDhwzeOJaTm-Ds0MezeC4U6nVGyyDHb4CUA3ml2tzt4yLrqGYMT7XbADSvuWYADHw79OFjEi4T3s3tJymhaBvy1ulv8M',
         qi: 'wSbXte9PcPtr788e713KHQ4waE26CzoXx-JNOgN0iqJMN6C4_XJEX-cSvCZDf4rh7xpXN6SGLVd5ibIyDJi7bbi5EQ5AXjazPbLBjRthcGXsIuZ3AtQyR0CEWNSdM7EyM5TRdyZQ9kftfz9nI03guW3iKKASETqX2vh0Z8XRjyU',
         use: 'sig',
-      },
-      {
-        crv: 'P-256',
-        d: 'K9xfPv773dZR22TVUB80xouzdF7qCg5cWjPjkHyv7Ws',
-        kty: 'EC',
-        use: 'sig',
-        x: 'FWZ9rSkLt6Dx9E3pxLybhdM6xgR5obGsj5_pqmnz5J4',
-        y: '_n8G69C-A2Xl4xUW2lF0i8ZGZnk_KPYrhv4GbTGu5G4',
       },
     ],
   },

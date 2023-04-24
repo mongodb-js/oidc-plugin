@@ -15,7 +15,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node-version: [14.x, 16.x, 18.x, latest]
+        # TODO(MONGOSH-1437): Bring back Node.js 20/latest after removing git dependency
+        node-version: [14.x, 16.x, 18.x]
     runs-on: ${{matrix.os}}
     steps:
       - uses: actions/checkout@v2
@@ -23,8 +24,11 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
+      - name: Install npm@8 for Node.js 14
+        run: node -e 'process.exitCode = +process.version.startsWith("v14")' || npm install -g npm@8
+        # the oidc-provider package we use doesn't list Node.js 20 as supported
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --ignore-engines
       - name: Test
         run: npm run test-ci
   check:
@@ -41,7 +45,9 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
+      - name: Install npm@8 for Node.js 14
+        run: node -e 'process.exitCode = +process.version.startsWith("v14")' || npm install -g npm@8
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --ignore-engines
       - name: Check
         run: npm run check
