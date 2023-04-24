@@ -10,6 +10,7 @@ import { MongoDBOIDCError } from './types';
 import {
   AbortController,
   errorString,
+  normalizeObject,
   throwIfAborted,
   timeoutSignal,
   withAbortCheck,
@@ -160,7 +161,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     principalName ??= null;
 
     const key = JSON.stringify({
-      clientId: serverMetadata.clientId,
+      // If any part of the server metadata changes, we should probably use
+      // a new cache entry.
+      ...normalizeObject(serverMetadata),
       principalName,
     });
     const existing = this.mapUserToAuthState.get(key);

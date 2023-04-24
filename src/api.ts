@@ -158,9 +158,15 @@ export const publicPluginToInternalPluginMap_DoNotUseOutsideOfTests =
  * driver's MongoClientOptions struct.
  *
  * This plugin instance can be passed to multiple MongoClient instances.
- * It caches credentials based on cluster ID and username. If no username is
- * provided when connecting to the MongoDB instance, the cache will be shared
- * across all MongoClients that use this plugin instance.
+ * It caches credentials based on cluster OIDC metadata and username.
+ * Do *not* pass the plugin instance to multiple MongoClient when the
+ * MongoDB deployments they are connecting to do not share a trust relationship
+ * since an untrusted server may be able to advertise malicious OIDC metadata
+ * (this restriction may be lifted in a future version of this library).
+ *
+ * If no username is provided when connecting to the MongoDB instance,
+ * the cache will be shared across all MongoClients that use this
+ * plugin instance.
  *
  * @public
  */
