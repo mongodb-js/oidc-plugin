@@ -92,9 +92,8 @@ describe('integration test with mongod', function () {
   let mongodExecutable: string;
 
   before(async function () {
-    // TODO(MONGOSH-1436): This is only because latest-alpha is very outdated for macos and Windows, this
-    // can be removed after 7.0.0-rc0. `true as unknown` makes TS happy.
-    if (process.platform !== 'linux' && (true as unknown)) {
+    if (process.platform !== 'linux') {
+      // For the time being, OIDC is only supported on Linux on the server side.
       return this.skip();
     }
 
@@ -102,11 +101,15 @@ describe('integration test with mongod', function () {
     tmpdir = path.join(os.tmpdir(), `test-mongodb-oidc-${Date.now()}`);
     await fs.mkdir(tmpdir, { recursive: true });
     mongodExecutable = path.join(
-      // TODO(MONGOSH-1436): Update this to a 7.0.0-rc version once available
-      await downloadMongoDb(tmpdir, 'latest-alpha'),
+      await downloadMongoDb(tmpdir, '>= 7.0.0-rc0', {
+        allowedTags: [
+          'release_candidate',
+          'continuous_release',
+          'production_release',
+        ],
+      }),
       'mongod'
     );
-    if (process.platform === 'win32') mongodExecutable += '.exe';
   });
 
   after(async function () {
