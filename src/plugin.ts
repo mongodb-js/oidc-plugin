@@ -16,7 +16,8 @@ import {
   withAbortCheck,
   withLock,
 } from './util';
-import type { TokenSet, Client, BaseClient } from 'openid-client';
+import type { Client, BaseClient } from 'openid-client';
+import { TokenSet } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
 import { promisify } from 'util';
@@ -42,11 +43,14 @@ interface UserOIDCAuthState {
   // is finished, if there is one at the moment.
   currentAuthAttempt: Promise<OIDCRequestTokenResult> | null;
   // The last set of OIDC tokens we have received together with a
-  // callback to refresh it, if available.
+  // callback to refresh it and the client used to obtain it, if available.
   currentTokenSet: {
     set: TokenSet;
     tryRefresh(): Promise<boolean>;
   } | null;
+  // A cached Client instance that uses the issuer metadata as discovered
+  // through serverOIDCMetadata.
+  client?: Client;
 }
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -136,6 +140,84 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       },
     };
     this.timers = { setTimeout, clearTimeout };
+    if (options.serializedState) {
+      this._deserialize(options.serializedState);
+    }
+  }
+
+  private _deserialize(serialized: string) {
+    try {
+      let original: ReturnType<typeof this._serialize>;
+      try {
+        original = JSON.parse(
+          Buffer.from(serialized, 'base64').toString('utf8')
+        );
+      } catch (err) {
+        throw new Error(
+          `Stored OIDC data could not be deserialized: ${
+            (err as Error).message
+          }`
+        );
+      }
+
+      if (original.oidcPluginStateVersion !== 0) {
+        throw new Error(
+          `Stored OIDC data could not be deserialized because of a version mismatch (got ${JSON.stringify(
+            original.oidcPluginStateVersion
+          )}, expected 0)`
+        );
+      }
+
+      for (const [key, serializedState] of original.state) {
+        const state = {
+          serverOIDCMetadata: { ...serializedState.serverOIDCMetadata },
+          currentAuthAttempt: null,
+          currentTokenSet: null,
+        };
+        this.updateStateWithTokenSet(
+          state,
+          new TokenSet(serializedState.currentTokenSet.set)
+        );
+        this.mapUserToAuthState.set(key, state);
+      }
+    } catch (err) {
+      this.logger.emit('mongodb-oidc-plugin:deserialization-failed', {
+        error: (err as Error).message,
+      });
+      // It's not necessary to throw by default here since failure to
+      // deserialize previous state means that, at worst, users will have
+      // to re-authenticate.
+      if (this.options.throwOnIncompatibleSerializedState) throw err;
+    }
+  }
+
+  // Separate method so we can re-use the inferred return type in _deserialize()
+  private _serialize() {
+    return {
+      oidcPluginStateVersion: 0,
+      state: [...this.mapUserToAuthState]
+        .filter(([, state]) => !!state.currentTokenSet)
+        .map(([key, state]) => {
+          return [
+            key,
+            {
+              serverOIDCMetadata: { ...state.serverOIDCMetadata },
+              currentTokenSet: {
+                set: { ...state.currentTokenSet?.set },
+              },
+            },
+          ] as const;
+        }),
+    } as const;
+  }
+
+  public serialize(): Promise<string> {
+    // Wrap the result using JS-to-JSON-to-UTF8-to-Base64. We could probably
+    // omit the base64 encoding, but this makes it clearer that it's an opaque
+    // value that's not intended to be inspected or modified.
+    return Promise.resolve(
+      Buffer.from(JSON.stringify(this._serialize()), 'utf8').toString('base64')
+    );
   }
 
   // Is this flow supported and allowed?
@@ -183,13 +265,28 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return this.options.redirectURI ?? 'http://localhost:27097/redirect';
   }
 
-  private async getOIDCClient(
-    serverMetadata: OIDCMechanismServerStep1
-  ): Promise<{
+  private async getOIDCClient(state: UserOIDCAuthState): Promise<{
     scope: string;
     issuer: Issuer;
     client: BaseClient;
   }> {
+    const serverMetadata = state.serverOIDCMetadata;
+    const scope = [
+      ...new Set([
+        'openid',
+        'offline_access',
+        ...(serverMetadata.requestScopes ?? []),
+      ]),
+    ].join(' ');
+
+    if (state.client) {
+      return {
+        scope,
+        issuer: state.client.issuer,
+        client: state.client,
+      };
+    }
+
     const issuer = await Issuer.discover(serverMetadata.issuer);
     const client = new issuer.Client({
       client_id: serverMetadata.clientId,
@@ -197,15 +294,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
     });
+    state.client = client;
 
     return {
-      scope: [
-        ...new Set([
-          'openid',
-          'offline_access',
-          ...(serverMetadata.requestScopes ?? []),
-        ]),
-      ].join(' '),
+      scope,
       issuer,
       client,
     };
@@ -254,10 +346,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     await this.options.notifyDeviceFlow(deviceFlowInformation);
   }
 
-  private storeTokenSet(
+  private updateStateWithTokenSet(
     state: UserOIDCAuthState,
-    tokenSet: TokenSet,
-    client: Client
+    tokenSet: TokenSet
   ) {
     const timerDuration = automaticRefreshTimeoutMS(tokenSet);
     let timer = timerDuration
@@ -273,11 +364,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       if (state.currentTokenSet?.set !== tokenSet) return false;
       try {
         this.logger.emit('mongodb-oidc-plugin:refresh-started');
+
+        const { client } = await this.getOIDCClient(state);
         const refreshedTokens = await client.refresh(tokenSet);
         // Check again to avoid race conditions.
         if (state.currentTokenSet?.set === tokenSet) {
           this.logger.emit('mongodb-oidc-plugin:refresh-succeeded');
-          this.storeTokenSet(state, refreshedTokens, client);
+          this.updateStateWithTokenSet(state, refreshedTokens);
           return true;
         }
       } catch (err: unknown) {
@@ -292,6 +385,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       set: tokenSet,
       tryRefresh,
     };
+
+    this.logger.emit('mongodb-oidc-plugin:state-updated');
   }
 
   private verifyValidUrl(
@@ -318,9 +413,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   ): Promise<void> {
     this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
 
-    const { scope, client } = await this.getOIDCClient(
-      state.serverOIDCMetadata
-    );
+    const { scope, client } = await this.getOIDCClient(state);
 
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
@@ -415,7 +508,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       code_verifier: codeVerifier,
       state: oidcStateParam,
     });
-    this.storeTokenSet(state, tokenSet, client);
+    this.updateStateWithTokenSet(state, tokenSet);
   }
 
   private async deviceAuthorizationFlow(
@@ -424,9 +517,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   ): Promise<void> {
     this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
 
-    const { scope, client } = await this.getOIDCClient(
-      state.serverOIDCMetadata
-    );
+    const { scope, client } = await this.getOIDCClient(state);
 
     await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
       const deviceFlowHandle = await Promise.race([
@@ -444,7 +535,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       });
 
       const tokenSet = await deviceFlowHandle.poll({ signal });
-      this.storeTokenSet(state, tokenSet, client);
+      this.updateStateWithTokenSet(state, tokenSet);
     });
   }
 

@@ -1,5 +1,9 @@
 /** @public */
 export interface MongoDBOIDCLogEventsMap {
+  'mongodb-oidc-plugin:deserialization-failed': (event: {
+    error: string;
+  }) => void;
+  'mongodb-oidc-plugin:state-updated': () => void;
   'mongodb-oidc-plugin:local-redirect-accessed': (event: {
     id: string;
   }) => void;

@@ -125,6 +125,23 @@ export interface MongoDBOIDCPluginOptions {
    * The default handler serves simple text/plain messages.
    */
   redirectServerRequestHandler?: RedirectServerRequestHandler;
+
+  /**
+   * A serialized representation of a previous plugin instance's state
+   * as returned by `.serialize()`.
+   *
+   * This option should only be passed if it comes from a trusted source,
+   * since it contains access tokens that will be sent to MongoDB servers.
+   */
+  serializedState?: string;
+
+  /**
+   * If set to true, creating the plugin will throw an exception when
+   * `serializedState` is provided but cannot be deserialized.
+   * If set to false, invalid serialized state will result in a log
+   * message being emitted but otherwise be ignored.
+   */
+  throwOnIncompatibleSerializedState?: boolean;
 }
 
 /** @public */
@@ -147,6 +164,16 @@ export interface MongoDBOIDCPlugin {
    * The logger instance passed in the options, or a default one otherwise.
    */
   readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
+
+  /**
+   * Create a serialized representation of this plugin's state. The result
+   * can be stored and be later passed to new plugin instances to make
+   * that instance behave as a resumed version of this instance.
+   *
+   * Be aware that this string contains OIDC tokens in plaintext! Do not
+   * store it without appropriate security mechanisms in place.
+   */
+  serialize(): Promise<string>;
 }
 
 /** @internal */
@@ -177,6 +204,7 @@ export function createMongoDBOIDCPlugin(
   const publicPlugin: MongoDBOIDCPlugin = {
     mongoClientOptions: plugin.mongoClientOptions,
     logger: plugin.logger,
+    serialize: plugin.serialize.bind(plugin),
   };
   publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.set(
     publicPlugin,
