@@ -107,12 +107,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
   });
 
   context('with functioning auth code flow', function () {
+    let pluginOptions: MongoDBOIDCPluginOptions;
     beforeEach(function () {
-      plugin = createMongoDBOIDCPlugin({
+      pluginOptions = {
         ...defaultOpts,
         allowedFlows: ['auth-code'],
         openBrowser: functioningAuthCodeBrowserFlow,
-      });
+      };
+      plugin = createMongoDBOIDCPlugin(pluginOptions);
     });
 
     it('can request tokens through the browser', async function () {
@@ -290,6 +292,118 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
 
         expect(await skipEvent).to.deep.equal([{ reason: 'not-expired' }]);
+      });
+    });
+
+    context('when re-created from a serialized state', function () {
+      it('can return serialized state', async function () {
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        const rawData = await plugin.serialize();
+        const serializedData = JSON.parse(
+          Buffer.from(rawData, 'base64').toString('utf8')
+        );
+        expect(serializedData.oidcPluginStateVersion).to.equal(0);
+        expect(serializedData.state).to.have.lengthOf(1);
+        expect(serializedData.state[0][0]).to.be.a('string');
+        expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
+          'currentTokenSet',
+          'serverOIDCMetadata',
+        ]);
+      });
+
+      it('can use access tokens from the serialized state', async function () {
+        const skipAuthAttemptEvent = once(
+          logger,
+          'mongodb-oidc-plugin:skip-auth-attempt'
+        );
+        const result1 = await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo()
+        );
+        const plugin2 = createMongoDBOIDCPlugin({
+          ...pluginOptions,
+          serializedState: await plugin.serialize(),
+        });
+        const result2 = await requestToken(
+          plugin2,
+          provider.getMongodbOIDCDBInfo()
+        );
+        expect(result1).to.deep.equal(result2);
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'not-expired' },
+        ]);
+      });
+
+      it('can use refresh tokens from the serialized state', async function () {
+        const skipAuthAttemptEvent = once(
+          logger,
+          'mongodb-oidc-plugin:skip-auth-attempt'
+        );
+        provider.accessTokenTTLSeconds = 1;
+        const result1 = await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo()
+        );
+        const plugin2 = createMongoDBOIDCPlugin({
+          ...pluginOptions,
+          serializedState: await plugin.serialize(),
+        });
+        const result2 = await requestToken(
+          plugin2,
+          provider.getMongodbOIDCDBInfo()
+        );
+        expect(result1).to.not.deep.equal(result2);
+        expect(getJWTContents(result1.accessToken).sub).to.equal(
+          getJWTContents(result2.accessToken).sub
+        );
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'refresh-succeeded' },
+        ]);
+      });
+
+      it('rejects invalid serialized state', async function () {
+        const error = once(
+          logger,
+          'mongodb-oidc-plugin:deserialization-failed'
+        );
+        createMongoDBOIDCPlugin({
+          serializedState: 'invalid',
+          logger,
+        });
+        expect((await error)[0].error).to.include(
+          'Stored OIDC data could not be deserialized'
+        );
+      });
+
+      it('rejects serialized state from a newer version of the plugin', async function () {
+        const error = once(
+          logger,
+          'mongodb-oidc-plugin:deserialization-failed'
+        );
+        createMongoDBOIDCPlugin({
+          serializedState: Buffer.from(
+            JSON.stringify({ oidcPluginStateVersion: 10000 }),
+            'utf8'
+          ).toString('base64'),
+          logger,
+        });
+        expect((await error)[0].error).to.include(
+          'Stored OIDC data could not be deserialized because of a version mismatch'
+        );
+      });
+
+      it('throws on deserialization errors when requested', function () {
+        try {
+          createMongoDBOIDCPlugin({
+            serializedState: 'invalid',
+            throwOnIncompatibleSerializedState: true,
+          });
+          expect.fail('missed exception');
+        } catch (err) {
+          expect(err.message).to.include(
+            'Stored OIDC data could not be deserialized'
+          );
+        }
       });
     });
   });

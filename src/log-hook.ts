@@ -239,4 +239,16 @@ export function hookLoggerToMongoLogWriter(
       'Token refresh attempt succeeded'
     );
   });
+
+  emitter.on('mongodb-oidc-plugin:deserialization-failed', (ev) => {
+    log.error(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_020),
+      `${contextPrefix}-oidc`,
+      'State deserialization failed',
+      {
+        ...ev,
+      }
+    );
+  });
 }
