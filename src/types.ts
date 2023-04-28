@@ -67,33 +67,34 @@ export interface TypedEventEmitter<EventMap extends object> {
 // esp. in breaking ways.
 
 /**
- * A copy of the Node.js driver's `OIDCMechanismServerStep1`
+ * A copy of the Node.js driver's `IdPServerInfo`
  * @public
  */
-export interface OIDCMechanismServerStep1 {
+export interface IdPServerInfo {
   issuer: string;
   clientId: string;
   requestScopes?: string[];
 }
 
 /**
- * A copy of the Node.js driver's `OIDCRequestTokenResult`
+ * A copy of the Node.js driver's `IdPServerResponse`
  * @public
  */
-export interface OIDCRequestTokenResult {
+export interface IdPServerResponse {
   accessToken: string;
   expiresInSeconds?: number;
   refreshToken?: string;
 }
 
 /**
- * A copy of the Node.js driver's `OIDCClientInfo`
+ * A copy of the Node.js driver's `OIDCCallbackContext`
  * @public
  */
-export interface OIDCClientInfo {
-  principalName?: string;
+export interface OIDCCallbackContext {
+  refreshToken?: string;
   timeoutSeconds?: number;
   timeoutContext?: OIDCAbortSignal;
+  version: number;
 }
 
 /**
@@ -101,19 +102,18 @@ export interface OIDCClientInfo {
  * @public
  */
 export type OIDCRequestFunction = (
-  clientInfo: OIDCClientInfo,
-  serverInfo: OIDCMechanismServerStep1
-) => Promise<OIDCRequestTokenResult>;
+  info: IdPServerInfo,
+  context: OIDCCallbackContext
+) => Promise<IdPServerResponse>;
 
 /**
  * A copy of the Node.js driver's `OIDCRefreshFunction`
  * @public
  */
 export type OIDCRefreshFunction = (
-  clientInfo: OIDCClientInfo,
-  serverInfo: OIDCMechanismServerStep1,
-  tokenResult: OIDCRequestTokenResult
-) => Promise<OIDCRequestTokenResult>;
+  info: IdPServerInfo,
+  context: OIDCCallbackContext
+) => Promise<IdPServerResponse>;
 
 /** @public */
 export type OIDCAbortSignal = {

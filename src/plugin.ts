@@ -1,9 +1,9 @@
 import type {
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
-  OIDCClientInfo,
-  OIDCMechanismServerStep1,
-  OIDCRequestTokenResult,
+  OIDCCallbackContext,
+  IdPServerInfo,
+  IdPServerResponse,
   TypedEventEmitter,
 } from './types';
 import { MongoDBOIDCError } from './types';
@@ -16,7 +16,7 @@ import {
   withAbortCheck,
   withLock,
 } from './util';
-import type { Client, BaseClient } from 'openid-client';
+import type { Client, BaseClient, IdTokenClaims } from 'openid-client';
 import { TokenSet } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
@@ -38,16 +38,19 @@ import { spawn } from 'child_process';
 interface UserOIDCAuthState {
   // The information that the driver forwarded to us from the server
   // about the OIDC Identity Provider config.
-  serverOIDCMetadata: OIDCMechanismServerStep1;
+  serverOIDCMetadata: IdPServerInfo;
   // A Promise that resolves when the current authentication attempt
   // is finished, if there is one at the moment.
-  currentAuthAttempt: Promise<OIDCRequestTokenResult> | null;
+  currentAuthAttempt: Promise<IdPServerResponse> | null;
   // The last set of OIDC tokens we have received together with a
   // callback to refresh it and the client used to obtain it, if available.
   currentTokenSet: {
     set: TokenSet;
     tryRefresh(): Promise<boolean>;
   } | null;
+  // The `sub` and `aud` claims in the ID token of the last-received
+  // TokenSet, if any.
+  lastIdTokenClaims?: Pick<IdTokenClaims, 'aud' | 'sub'>;
   // A cached Client instance that uses the issuer metadata as discovered
   // through serverOIDCMetadata.
   client?: Client;
@@ -122,7 +125,7 @@ function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
 export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private readonly options: Readonly<MongoDBOIDCPluginOptions>;
   public readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
-  private readonly mapUserToAuthState = new Map<string, UserOIDCAuthState>();
+  private readonly mapIdpToAuthState = new Map<string, UserOIDCAuthState>();
   public readonly mongoClientOptions: MongoDBOIDCPlugin['mongoClientOptions'];
   private readonly timers: {
     // Only for testing
@@ -153,7 +156,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           Buffer.from(serialized, 'base64').toString('utf8')
         );
       } catch (err) {
-        throw new Error(
+        throw new MongoDBOIDCError(
           `Stored OIDC data could not be deserialized: ${
             (err as Error).message
           }`
@@ -161,7 +164,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       }
 
       if (original.oidcPluginStateVersion !== 0) {
-        throw new Error(
+        throw new MongoDBOIDCError(
           `Stored OIDC data could not be deserialized because of a version mismatch (got ${JSON.stringify(
             original.oidcPluginStateVersion
           )}, expected 0)`
@@ -173,12 +176,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           serverOIDCMetadata: { ...serializedState.serverOIDCMetadata },
           currentAuthAttempt: null,
           currentTokenSet: null,
+          lastIdTokenClaims: serializedState.lastIdTokenClaims
+            ? { ...serializedState.lastIdTokenClaims }
+            : undefined,
         };
         this.updateStateWithTokenSet(
           state,
           new TokenSet(serializedState.currentTokenSet.set)
         );
-        this.mapUserToAuthState.set(key, state);
+        this.mapIdpToAuthState.set(key, state);
       }
     } catch (err) {
       this.logger.emit('mongodb-oidc-plugin:deserialization-failed', {
@@ -195,7 +201,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private _serialize() {
     return {
       oidcPluginStateVersion: 0,
-      state: [...this.mapUserToAuthState]
+      state: [...this.mapIdpToAuthState]
         .filter(([, state]) => !!state.currentTokenSet)
         .map(([key, state]) => {
           return [
@@ -205,6 +211,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
               currentTokenSet: {
                 set: { ...state.currentTokenSet?.set },
               },
+              lastIdTokenClaims: state.lastIdTokenClaims
+                ? { ...state.lastIdTokenClaims }
+                : undefined,
             },
           ] as const;
         }),
@@ -231,31 +240,26 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
   // Return the current state for a given [server, username] configuration,
   // or create a new one if none exists.
-  private getAuthState(
-    serverMetadata: OIDCMechanismServerStep1,
-    principalName: string | null | undefined
-  ): UserOIDCAuthState {
+  private getAuthState(serverMetadata: IdPServerInfo): UserOIDCAuthState {
     if (!serverMetadata.clientId) {
       throw new MongoDBOIDCError(
         'No clientId passed in server OIDC metadata object'
       );
     }
-    principalName ??= null;
 
     const key = JSON.stringify({
       // If any part of the server metadata changes, we should probably use
       // a new cache entry.
       ...normalizeObject(serverMetadata),
-      principalName,
     });
-    const existing = this.mapUserToAuthState.get(key);
+    const existing = this.mapIdpToAuthState.get(key);
     if (existing) return existing;
     const newState: UserOIDCAuthState = {
       serverOIDCMetadata: serverMetadata,
       currentAuthAttempt: null,
       currentTokenSet: null,
     };
-    this.mapUserToAuthState.set(key, newState);
+    this.mapIdpToAuthState.set(key, newState);
     return newState;
   }
 
@@ -313,7 +317,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     });
     if (this.options.openBrowser === false) {
       // We should never really get to this point
-      throw new Error('Cannot open browser if `openBrowser` is false');
+      throw new MongoDBOIDCError(
+        'Cannot open browser if `openBrowser` is false'
+      );
     }
     if (typeof this.options.openBrowser === 'function') {
       return await this.options.openBrowser(options);
@@ -332,7 +338,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       child.unref();
       return child;
     }
-    throw new Error('Unknown format for `openBrowser`');
+    throw new MongoDBOIDCError('Unknown format for `openBrowser`');
   }
 
   private async notifyDeviceFlow(
@@ -340,7 +346,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   ): Promise<void> {
     if (!this.options.notifyDeviceFlow) {
       // Should never happen.
-      throw new Error('notifyDeviceFlow() requested but not provided');
+      throw new MongoDBOIDCError(
+        'notifyDeviceFlow() requested but not provided'
+      );
     }
     this.logger.emit('mongodb-oidc-plugin:notify-device-flow');
     await this.options.notifyDeviceFlow(deviceFlowInformation);
@@ -350,6 +358,35 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state: UserOIDCAuthState,
     tokenSet: TokenSet
   ) {
+    // We intend to be able to pass plugin instances to multiple MongoClient
+    // instances that are connecting to the same MongoDB endpoint.
+    // We need to prevent a scenario in which a requestToken callback is called
+    // for client A, the token expires before it is requested again by client A,
+    // then the plugin is passed to client B which requests a token, and we
+    // receive mismatching tokens for different users or different audiences.
+    const idTokenClaims = tokenSet.claims();
+    if (state.lastIdTokenClaims) {
+      for (const claim of ['aud', 'sub'] as const) {
+        const normalize = (value: string | string[]): string => {
+          return JSON.stringify(
+            Array.isArray(value) ? [...value].sort() : value
+          );
+        };
+        const knownClaim = normalize(state.lastIdTokenClaims[claim]);
+        const newClaim = normalize(idTokenClaims[claim]);
+
+        if (knownClaim !== newClaim) {
+          throw new MongoDBOIDCError(
+            `Unexpected '${claim}' field in id token: Expected ${knownClaim}, saw ${newClaim}`
+          );
+        }
+      }
+    }
+    state.lastIdTokenClaims = {
+      aud: idTokenClaims.aud,
+      sub: idTokenClaims.sub,
+    };
+
     const timerDuration = automaticRefreshTimeoutMS(tokenSet);
     let timer = timerDuration
       ? this.timers.setTimeout(() => void tryRefresh(), timerDuration).unref()
@@ -390,8 +427,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   private verifyValidUrl(
-    serverOIDCMetadata: OIDCMechanismServerStep1,
-    key: keyof OIDCMechanismServerStep1
+    serverOIDCMetadata: IdPServerInfo,
+    key: keyof IdPServerInfo
   ): void {
     // Verify that `key` refers to a valid URL. This is currently
     // *not* an error that we allow to fall back from.
@@ -542,7 +579,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private async initiateAuthAttempt(
     state: UserOIDCAuthState,
     driverAbortSignal?: OIDCAbortSignal
-  ): Promise<OIDCRequestTokenResult> {
+  ): Promise<IdPServerResponse> {
     throwIfAborted(this.options.signal);
     throwIfAborted(driverAbortSignal);
 
@@ -646,10 +683,16 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   public async requestToken(
-    clientInfo: OIDCClientInfo,
-    serverMetadata: OIDCMechanismServerStep1
-  ): Promise<OIDCRequestTokenResult> {
-    const state = this.getAuthState(serverMetadata, clientInfo.principalName);
+    serverMetadata: IdPServerInfo,
+    context: OIDCCallbackContext
+  ): Promise<IdPServerResponse> {
+    if (context.version !== 0) {
+      throw new MongoDBOIDCError(
+        `OIDC MongoDB driver protocol mismatch: unknown version ${context.version}`
+      );
+    }
+
+    const state = this.getAuthState(serverMetadata);
 
     if (state.currentAuthAttempt) {
       return await state.currentAuthAttempt;
@@ -660,9 +703,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // compatibility with the 5.x driver/AbortSignal-less-Node.js, we accept
     // a timeout in milliseconds as well.
     const driverAbortSignal =
-      clientInfo.timeoutContext ??
-      (clientInfo.timeoutSeconds
-        ? timeoutSignal(clientInfo.timeoutSeconds * 1000)
+      context.timeoutContext ??
+      (context.timeoutSeconds
+        ? timeoutSignal(context.timeoutSeconds * 1000)
         : undefined);
 
     const newAuthAttempt = this.initiateAuthAttempt(state, driverAbortSignal);

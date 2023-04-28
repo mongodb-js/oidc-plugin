@@ -12,11 +12,11 @@ export type {
 
 export type {
   TypedEventEmitter,
-  OIDCClientInfo,
+  OIDCCallbackContext,
   OIDCRefreshFunction,
   OIDCRequestFunction,
-  OIDCMechanismServerStep1,
-  OIDCRequestTokenResult,
+  IdPServerInfo,
+  IdPServerResponse,
   OIDCAbortSignal,
   MongoDBOIDCError,
   MongoDBOIDCLogEventsMap,

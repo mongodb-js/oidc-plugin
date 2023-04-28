@@ -144,6 +144,13 @@ export interface MongoDBOIDCPluginOptions {
   throwOnIncompatibleSerializedState?: boolean;
 }
 
+export interface MongoDBOIDCPluginMongoClientOptions {
+  readonly authMechanismProperties: {
+    readonly REQUEST_TOKEN_CALLBACK: OIDCRequestFunction;
+    readonly REFRESH_TOKEN_CALLBACK: OIDCRefreshFunction;
+  };
+}
+
 /** @public */
 export interface MongoDBOIDCPlugin {
   /**
@@ -152,13 +159,10 @@ export interface MongoDBOIDCPlugin {
    *
    * This object should be deep-merged with other, pre-existing
    * MongoClient driver options.
+   *
+   * @public
    */
-  readonly mongoClientOptions: {
-    readonly authMechanismProperties: {
-      readonly REQUEST_TOKEN_CALLBACK: OIDCRequestFunction;
-      readonly REFRESH_TOKEN_CALLBACK: OIDCRefreshFunction;
-    };
-  };
+  readonly mongoClientOptions: MongoDBOIDCPluginMongoClientOptions;
 
   /**
    * The logger instance passed in the options, or a default one otherwise.
@@ -185,15 +189,14 @@ export const publicPluginToInternalPluginMap_DoNotUseOutsideOfTests =
  * driver's MongoClientOptions struct.
  *
  * This plugin instance can be passed to multiple MongoClient instances.
- * It caches credentials based on cluster OIDC metadata and username.
- * Do *not* pass the plugin instance to multiple MongoClient when the
+ * It caches credentials based on cluster OIDC metadata.
+ * Do *not* pass the plugin instance to multiple MongoClient instances when the
  * MongoDB deployments they are connecting to do not share a trust relationship
  * since an untrusted server may be able to advertise malicious OIDC metadata
  * (this restriction may be lifted in a future version of this library).
- *
- * If no username is provided when connecting to the MongoDB instance,
- * the cache will be shared across all MongoClients that use this
- * plugin instance.
+ * Do *not* pass the plugin instnace to multiple MongoClient instances when they
+ * are being used with different usernames (user principals), in the connection
+ * string or in the MongoClient options.
  *
  * @public
  */
