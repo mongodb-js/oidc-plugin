@@ -400,7 +400,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           });
           expect.fail('missed exception');
         } catch (err) {
-          expect(err.message).to.include(
+          expect((err as any).message).to.include(
             'Stored OIDC data could not be deserialized'
           );
         }
@@ -461,7 +461,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       try {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
       } catch (err) {
-        expect(err.message).to.equal('device auth');
+        expect((err as any).message).to.equal('device auth');
       }
     });
 
@@ -474,7 +474,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       try {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
       } catch (err) {
-        expect(err.message).to.equal('Could not retrieve valid access token');
+        expect((err as any).message).to.equal(
+          'Could not retrieve valid access token'
+        );
       }
     });
   });
@@ -549,7 +551,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await result;
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.match(/abort|cancel/);
+        expect((err as any).message).to.match(/abort|cancel/);
       }
       expect(openBrowserAborted).to.equal(true);
     });
@@ -561,7 +563,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await result;
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.match(/abort|cancel/);
+        expect((err as any).message).to.match(/abort|cancel/);
       }
       expect(openBrowserAborted).to.equal(true);
     });
@@ -579,7 +581,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.equal('could not spawn');
+        expect((err as any).message).to.equal('could not spawn');
       }
     });
 
@@ -596,7 +598,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.equal('Opening browser failed with exit code 1');
+        expect((err as any).message).to.equal(
+          'Opening browser failed with exit code 1'
+        );
       }
     });
 
@@ -619,7 +623,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.equal('Opening browser failed with exit code 1');
+        expect((err as any).message).to.equal(
+          'Opening browser failed with exit code 1'
+        );
       }
       const argv = JSON.parse(await fs.readFile(argvFile, 'utf8'));
       await fs.rm(argvFile, { force: true });
@@ -642,7 +648,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.equal('Opening browser timed out');
+        expect((err as any).message).to.equal('Opening browser timed out');
       }
     });
   });

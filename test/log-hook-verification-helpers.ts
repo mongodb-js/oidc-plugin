@@ -19,7 +19,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
       id: 1_002_000_005,
       ctx: 'test-oidc',
       msg: 'Started listening on local server',
-      attr: (attr) =>
+      attr: (attr: Record<string, unknown>) =>
         expect(attr.url).to.match(/http:\/\/localhost.*\/redirect/),
     },
     {
@@ -29,11 +29,12 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
       id: 1_002_000_007,
       ctx: 'test-oidc',
       msg: 'Successfully listening on local server',
-      attr: (attr) => {
+      attr: (attr: Record<string, unknown>) => {
         expect(attr.url).to.match(/http:\/\/localhost.*\/redirect/);
         expect(attr.interfaces).to.be.an('array');
         expect(attr.interfaces).to.have.lengthOf.greaterThanOrEqual(1);
-        for (const item of attr.interfaces) expect(item).to.be.a('string');
+        for (const item of attr.interfaces as unknown[])
+          expect(item).to.be.a('string');
       },
     },
     {
@@ -52,7 +53,8 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
       id: 1_002_000_001,
       ctx: 'test-oidc',
       msg: 'Local redirect accessed',
-      attr: (attr) => expect(attr.id).to.be.a('string'),
+      attr: (attr: Record<string, unknown>) =>
+        expect(attr.id).to.be.a('string'),
     },
     {
       t: { $date: '2021-12-16T14:35:08.763Z' },
@@ -70,7 +72,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
       id: 1_002_000_008,
       ctx: 'test-oidc',
       msg: 'Local server closed',
-      attr: (attr) =>
+      attr: (attr: Record<string, unknown>) =>
         expect(attr.url).to.match(/http:\/\/localhost.*\/redirect/),
     },
     {
@@ -80,7 +82,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
       id: 1_002_000_008,
       ctx: 'test-oidc',
       msg: 'Local server closed',
-      attr: (attr) =>
+      attr: (attr: Record<string, unknown>) =>
         expect(attr.url).to.match(/http:\/\/localhost.*\/redirect/),
     },
     {
@@ -98,10 +100,12 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
       id: 1_002_000_017,
       ctx: 'test-oidc',
       msg: 'Authentication succeeded',
-      attr: (attr) => {
+      attr: (attr: Record<string, unknown>) => {
         expect(attr.hasRefreshToken).to.equal(true);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        expect(new Date(attr.expiresAt).toISOString()).to.equal(attr.expiresAt);
+        expect(new Date(attr.expiresAt as string).toISOString()).to.equal(
+          attr.expiresAt
+        );
       },
     },
   ] as const) {
@@ -111,6 +115,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
     const { attr: expectedAttr, ...expectedProps } = expected;
     expect(foundProps).to.deep.equal(expectedProps);
     if (typeof expectedAttr === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       expectedAttr(foundAttr);
     } else {
       expect(foundAttr).to.deep.equal(expectedAttr);

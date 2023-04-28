@@ -19,7 +19,10 @@ import { OIDCMockProvider } from '@mongodb-js/oidc-mock-provider';
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 const fetch: typeof import('node-fetch').default = (...args) =>
-  eval("import('node-fetch')").then(({ default: fetch }) => fetch(...args));
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  eval("import('node-fetch')").then((fetch: typeof import('node-fetch')) =>
+    fetch.default(...args)
+  );
 
 // Spawn a mongod process with a provided OIDC configuration.
 async function spawnMongod(

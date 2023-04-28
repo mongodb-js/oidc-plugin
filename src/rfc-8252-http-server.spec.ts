@@ -13,7 +13,10 @@ import { randomBytes } from 'crypto';
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 const fetch: typeof import('node-fetch').default = (...args) =>
-  eval("import('node-fetch')").then(({ default: fetch }) => fetch(...args));
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  eval("import('node-fetch')").then((fetch: typeof import('node-fetch')) =>
+    fetch.default(...args)
+  );
 
 describe('RFC8252HTTPServer', function () {
   let server: RFC8252HTTPServer;
@@ -43,10 +46,18 @@ describe('RFC8252HTTPServer', function () {
     events = [];
     logger = new EventEmitter();
     const origEmit = logger.emit.bind(logger);
-    sinon.replace(logger, 'emit', function (event: string, ...args: any[]) {
-      events.push([event, ...args]);
-      return origEmit.call(this, args);
-    });
+    sinon.replace(
+      logger,
+      'emit',
+      function (
+        this: typeof logger,
+        event: string,
+        ...args: Parameters<typeof logger.emit>
+      ) {
+        events.push([event, ...args]);
+        return origEmit.apply(this, args);
+      }
+    );
   });
 
   afterEach(async function () {
@@ -113,7 +124,7 @@ describe('RFC8252HTTPServer', function () {
         await fetch(url.toString());
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.include('ECONNREFUSED');
+        expect((err as any).message).to.include('ECONNREFUSED');
       }
     });
   });
@@ -149,7 +160,7 @@ describe('RFC8252HTTPServer', function () {
         await fetch(url.toString());
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.include('ECONNREFUSED');
+        expect((err as any).message).to.include('ECONNREFUSED');
       }
     });
   });
@@ -165,7 +176,7 @@ describe('RFC8252HTTPServer', function () {
         await server.listen();
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.include('getaddrinfo');
+        expect((err as any).message).to.include('getaddrinfo');
       }
     });
   });
@@ -181,7 +192,7 @@ describe('RFC8252HTTPServer', function () {
         await server.listen();
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.include('EADDRINUSE');
+        expect((err as any).message).to.include('EADDRINUSE');
       }
     });
   });
@@ -277,7 +288,7 @@ describe('RFC8252HTTPServer', function () {
         await server.listen();
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.include('Already listening');
+        expect((err as any).message).to.include('Already listening');
       }
     });
 
@@ -305,7 +316,7 @@ describe('RFC8252HTTPServer', function () {
         await conveniencePromise;
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.match(/abort|cancel/i);
+        expect((err as any).message).to.match(/abort|cancel/i);
       }
       expect(server.listeningPort).to.equal(undefined);
     });
@@ -347,7 +358,7 @@ describe('RFC8252HTTPServer', function () {
         await conveniencePromise;
         expect.fail('missed exception');
       } catch (err) {
-        expect(err.message).to.include('test_error');
+        expect((err as any).message).to.include('test_error');
       }
       expect(server.listeningPort).to.equal(undefined);
     });

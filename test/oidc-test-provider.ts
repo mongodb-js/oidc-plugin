@@ -116,6 +116,8 @@ export class OIDCTestProvider {
 
   private constructor() {
     this.httpServer = createHTTPServer();
+    // Initialized in .init()
+    this.issuer = '';
   }
 
   private async init(): Promise<this> {
@@ -197,7 +199,7 @@ async function spawnBrowser(
   } catch (e) {
     /* ignore */
   }
-  function deleteNodeOptions({ env }) {
+  function deleteNodeOptions({ env }: { env: Record<string, unknown> }) {
     delete env.NODE_OPTIONS;
   }
   processOnSpawn?.addListener(deleteNodeOptions);
