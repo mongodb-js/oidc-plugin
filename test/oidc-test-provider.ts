@@ -148,7 +148,8 @@ export class OIDCTestProvider {
     );
     app.set('view engine', 'ejs');
     (await import(oidcProviderExpressExamplePath)).default(app, oidcProvider);
-    app.use(oidcProvider.callback());
+    const oidcProviderAppCallback = oidcProvider.callback();
+    app.use((req, res) => void oidcProviderAppCallback(req, res));
 
     this.issuer = `http://localhost:${port}`;
     return this;
