@@ -13,7 +13,7 @@ import type {
 } from 'oidc-provider';
 import path from 'path';
 import { once } from 'events';
-import type { OIDCMechanismServerStep1 } from '../src';
+import type { IdPServerInfo } from '../src';
 
 {
   // monkey-patch the test oidc provider so that it returns 'typ: JWT'
@@ -164,7 +164,7 @@ export class OIDCTestProvider {
     await once(this.httpServer, 'close');
   }
 
-  public getMongodbOIDCDBInfo(): OIDCMechanismServerStep1 {
+  public getMongodbOIDCDBInfo(): IdPServerInfo {
     return {
       clientId: oidcClientConfig.client_id,
       issuer: this.issuer,

@@ -2,8 +2,8 @@ import type {
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,
   OIDCAbortSignal,
-  OIDCClientInfo,
-  OIDCMechanismServerStep1,
+  OIDCCallbackContext,
+  IdPServerInfo,
   OIDCRequestFunction,
 } from './';
 import { createMongoDBOIDCPlugin, hookLoggerToMongoLogWriter } from './';
@@ -32,16 +32,15 @@ import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 // if they aren't being used in the first place.
 function requestToken(
   plugin: MongoDBOIDCPlugin,
-  oidcParams: OIDCMechanismServerStep1,
-  principalName?: string | undefined,
+  oidcParams: IdPServerInfo,
   abortSignal?: OIDCAbortSignal | number
 ): ReturnType<OIDCRequestFunction> {
-  const clientInfo: OIDCClientInfo = { principalName };
+  const clientInfo: OIDCCallbackContext = { version: 0 };
   if (typeof abortSignal === 'number') clientInfo.timeoutSeconds = abortSignal;
   else if (abortSignal) clientInfo.timeoutContext = abortSignal;
   return plugin.mongoClientOptions.authMechanismProperties.REQUEST_TOKEN_CALLBACK(
-    clientInfo,
-    oidcParams
+    oidcParams,
+    clientInfo
   );
 }
 
@@ -199,33 +198,6 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ]);
     });
 
-    it('will re-use tokens while they are valid if the same username was provided', async function () {
-      const result1 = await requestToken(
-        plugin,
-        provider.getMongodbOIDCDBInfo(),
-        'testuser'
-      );
-      const result2 = await requestToken(
-        plugin,
-        provider.getMongodbOIDCDBInfo(),
-        'testuser'
-      );
-      expect(result1).to.deep.equal(result2);
-    });
-    it('will not re-use tokens if different usernames were provided', async function () {
-      const result1 = await requestToken(
-        plugin,
-        provider.getMongodbOIDCDBInfo(),
-        'testuser1'
-      );
-      const result2 = await requestToken(
-        plugin,
-        provider.getMongodbOIDCDBInfo(),
-        'testuser2'
-      );
-      expect(result1).to.not.deep.equal(result2);
-    });
-
     context('with automatic token refresh', function () {
       it('will automatically refresh tokens', async function () {
         const timeouts: {
@@ -307,6 +279,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(serializedData.state[0][0]).to.be.a('string');
         expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
           'currentTokenSet',
+          'lastIdTokenClaims',
           'serverOIDCMetadata',
         ]);
       });
@@ -543,7 +516,6 @@ describe('OIDC plugin (local OIDC provider)', function () {
       const result = requestToken(
         plugin,
         provider.getMongodbOIDCDBInfo(),
-        undefined,
         driverController.signal
       );
       onBrowserOpenRequested = () => driverController.abort();
@@ -728,7 +700,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   });
 
   describe('Okta integration tests', function () {
-    let metadata: OIDCMechanismServerStep1;
+    let metadata: IdPServerInfo;
     let username: string;
     let password: string;
     let issuer: string;
