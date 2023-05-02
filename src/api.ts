@@ -194,7 +194,7 @@ export const publicPluginToInternalPluginMap_DoNotUseOutsideOfTests =
  * MongoDB deployments they are connecting to do not share a trust relationship
  * since an untrusted server may be able to advertise malicious OIDC metadata
  * (this restriction may be lifted in a future version of this library).
- * Do *not* pass the plugin instnace to multiple MongoClient instances when they
+ * Do *not* pass the plugin instance to multiple MongoClient instances when they
  * are being used with different usernames (user principals), in the connection
  * string or in the MongoClient options.
  *
