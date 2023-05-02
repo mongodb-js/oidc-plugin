@@ -8,6 +8,7 @@ export type {
   OpenBrowserReturnType,
   RedirectServerRequestHandler,
   RedirectServerRequestInfo,
+  MongoDBOIDCPluginMongoClientOptions,
 } from './api';
 
 export type {

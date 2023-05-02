@@ -37,6 +37,7 @@ functions:
           set -x
 
           . .evergreen/use-node.sh
+          npm run compile
           npm run check
   test:
     - command: shell.exec
