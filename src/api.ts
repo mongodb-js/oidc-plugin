@@ -144,6 +144,7 @@ export interface MongoDBOIDCPluginOptions {
   throwOnIncompatibleSerializedState?: boolean;
 }
 
+/** @public */
 export interface MongoDBOIDCPluginMongoClientOptions {
   readonly authMechanismProperties: {
     readonly REQUEST_TOKEN_CALLBACK: OIDCRequestFunction;
