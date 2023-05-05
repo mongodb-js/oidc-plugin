@@ -76,8 +76,32 @@ async function getDefaultOpenBrowser(): Promise<
   }
   // Otherwise, use open() from npm.
   return async ({ url }) => {
-    // 'open' 9.x+ is ESM-only.
-    const open = (await import('open')).default;
+    // 'open' 9.x+ is ESM-only. However, TypeScript transpiles
+    // the `await import()` here to `require()`, which fails to load
+    // the package at runtime. We cannot use one of the typical workarounds
+    // for loading ESM packages unconditionally, because we need to be
+    // able to webpack this file (e.g. in Compass), which means that we
+    // need to use imports with constant string literal arguments.
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+    let open: typeof import('open').default;
+    try {
+      open = (await import('open')).default;
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'ERR_REQUIRE_ESM' &&
+        typeof __webpack_require__ === 'undefined'
+      ) {
+        // This means that the import() above was transpiled to require()
+        // and that that require() called failed because it saw actual on-disk ESM.
+        // In this case, it should be safe to use eval'ed import().
+        open = (await eval("import('open')")).default;
+      } else {
+        throw err;
+      }
+    }
     const child = await open(url);
     child.unref();
     return child;
