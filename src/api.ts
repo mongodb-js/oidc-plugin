@@ -29,10 +29,12 @@ export interface DeviceFlowInformation {
 export type OpenBrowserReturnType =
   | void
   | undefined
-  | TypedEventEmitter<{
+  | (TypedEventEmitter<{
       exit(exitCode: number): void;
       error(err: unknown): void;
-    }>;
+    }> & {
+      spawnargs?: string[];
+    });
 
 /** @public */
 export interface OpenBrowserOptions {

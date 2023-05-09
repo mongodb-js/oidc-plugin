@@ -553,7 +553,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect.fail('missed exception');
       } catch (err) {
-        expect((err as any).message).to.equal('could not spawn');
+        expect((err as any).message).to.equal(
+          "Opening browser failed with 'could not spawn'"
+        );
       }
     });
 
@@ -595,9 +597,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect.fail('missed exception');
       } catch (err) {
-        expect((err as any).message).to.equal(
+        expect((err as any).message).to.include(
           'Opening browser failed with exit code 1'
         );
+        expect((err as any).message).to.include('faux-browser.js');
       }
       const argv = JSON.parse(await fs.readFile(argvFile, 'utf8'));
       await fs.rm(argvFile, { force: true });
