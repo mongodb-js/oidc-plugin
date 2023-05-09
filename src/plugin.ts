@@ -519,12 +519,26 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           new Promise<never>((resolve, reject) => {
             this.openBrowser({ url: localUrl, signal })
               .then((browserHandle) => {
-                browserHandle?.once('error', (err) => reject(err));
+                const extraErrorInfo = () =>
+                  browserHandle?.spawnargs
+                    ? ` (${JSON.stringify(browserHandle.spawnargs)})`
+                    : '';
+                browserHandle?.once('error', (err) =>
+                  reject(
+                    new MongoDBOIDCError(
+                      `Opening browser failed with '${String(
+                        err && typeof err === 'object' && 'message' in err
+                          ? err.message
+                          : err
+                      )}'${extraErrorInfo()}`
+                    )
+                  )
+                );
                 browserHandle?.once('exit', (code) => {
                   if (code !== 0)
                     reject(
                       new MongoDBOIDCError(
-                        `Opening browser failed with exit code ${code}`
+                        `Opening browser failed with exit code ${code}${extraErrorInfo()}`
                       )
                     );
                 });
