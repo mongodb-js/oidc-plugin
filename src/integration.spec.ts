@@ -242,6 +242,32 @@ describe('integration test with mongod', function () {
       }
     });
 
+    it('can successfully authenticate with a fake Auth Code Flow with arbitrary-port redirectURI', async function () {
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+      const client = await MongoClient.connect(connectionString, {
+        ...plugin.mongoClientOptions,
+      });
+      try {
+        const status = await client
+          .db('admin')
+          .command({ connectionStatus: 1 });
+        expect(status).to.deep.equal({
+          ok: 1,
+          authInfo: {
+            authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
+            authenticatedUserRoles: [{ role: 'dev/testgroup', db: 'admin' }],
+          },
+        });
+      } finally {
+        await client.close();
+      }
+    });
+
     it('can successfully authenticate with a fake Device Auth Flow', async function () {
       const plugin = createMongoDBOIDCPlugin({
         notifyDeviceFlow: () => {},
