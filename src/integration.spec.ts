@@ -247,7 +247,7 @@ describe('integration test with mongod', function () {
         openBrowserTimeout: 60_000,
         openBrowser: fetchBrowser,
         allowedFlows: ['auth-code'],
-        redirectURI: 'http://localhost:0/callback'
+        redirectURI: 'http://localhost:0/callback',
       });
       const client = await MongoClient.connect(connectionString, {
         ...plugin.mongoClientOptions,

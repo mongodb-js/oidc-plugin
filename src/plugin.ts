@@ -287,13 +287,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return newState;
   }
 
-  private getRedirectURI(): string {
+  private getConfiguredRedirectURI(): string {
     if (!this.isFlowAllowed('auth-code')) return '';
-    // TODO(MONGOSH-1394): Properly standardize a port
     return this.options.redirectURI ?? 'http://localhost:27097/redirect';
   }
 
-  private async getOIDCClient(state: UserOIDCAuthState): Promise<{
+  private async getOIDCClient(
+    state: UserOIDCAuthState,
+    redirectURIs?: string[]
+  ): Promise<{
     scope: string;
     issuer: Issuer;
     client: BaseClient;
@@ -311,14 +313,19 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       return {
         scope,
         issuer: state.client.issuer,
-        client: state.client,
+        // need to re-create Client here because redirect_uris might
+        // differ between calls to this method
+        client: new state.client.issuer.Client({
+          ...state.client.metadata,
+          redirect_uris: redirectURIs,
+        }),
       };
     }
 
     const issuer = await Issuer.discover(serverMetadata.issuer);
     const client = new issuer.Client({
       client_id: serverMetadata.clientId,
-      redirect_uris: [this.getRedirectURI()],
+      redirect_uris: redirectURIs,
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
     });
@@ -474,19 +481,21 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   ): Promise<void> {
     this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
 
-    const { scope, client } = await this.getOIDCClient(state);
-
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
 
     const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
     const server = new RFC8252HTTPServer({
-      redirectUrl: this.getRedirectURI(),
+      redirectUrl: this.getConfiguredRedirectURI(),
       logger: this.logger,
       redirectServerRequestHandler: this.options.redirectServerRequestHandler,
       oidcStateParam,
     });
     let paramsUrl = '';
+
+    let scope!: string;
+    let client!: BaseClient;
+    let actualRedirectURI!: string;
 
     try {
       await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
@@ -500,6 +509,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           allowFallbackIfFailed(server.listen()),
           signalPromise,
         ]);
+
+        actualRedirectURI = server.listeningRedirectUrl as string;
+        ({ scope, client } = await this.getOIDCClient(state, [
+          actualRedirectURI,
+        ]));
 
         const authCodeFlowUrl = client.authorizationUrl({
           scope,
@@ -579,7 +593,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     const params = client.callbackParams(paramsUrl);
-    const tokenSet = await client.callback(this.getRedirectURI(), params, {
+    const tokenSet = await client.callback(actualRedirectURI, params, {
       code_verifier: codeVerifier,
       state: oidcStateParam,
     });
