@@ -20,7 +20,7 @@ import {
   oktaBrowserAuthCodeFlow,
   oktaBrowserDeviceAuthFlow,
 } from '../test/oidc-test-provider';
-import { AbortController } from './util';
+import { AbortController, AbortSignal } from './util';
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
