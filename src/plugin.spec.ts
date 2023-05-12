@@ -241,7 +241,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(timeouts).to.have.lengthOf(1);
         expect(timeouts[0].refed).to.equal(false);
         expect(timeouts[0].cleared).to.equal(false);
-        expect(timeouts[0].timeout).to.equal(9_700_000);
+        // openid-client bases expiration time on the actual current time, so
+        // allow for a small margin of error here.
+        expect(timeouts[0].timeout).to.be.greaterThanOrEqual(9_600_000);
+        expect(timeouts[0].timeout).to.be.greaterThanOrEqual(9_800_000);
         const refreshStartedEvent = once(
           plugin.logger,
           'mongodb-oidc-plugin:refresh-started'
