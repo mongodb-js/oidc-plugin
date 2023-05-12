@@ -13,6 +13,11 @@ import type {
 
 /** @public */
 export type AuthFlowType = 'auth-code' | 'device-auth';
+/** @public */
+export const ALL_AUTH_FLOW_TYPES: readonly AuthFlowType[] = Object.freeze([
+  'auth-code',
+  'device-auth',
+]);
 
 /**
  * Information that the application needs to show to users when using the
@@ -99,8 +104,20 @@ export interface MongoDBOIDCPluginOptions {
 
   /**
    * Restrict possible OIDC authorization flows to a subset.
+   *
+   * This can either be a static list of supported flows or a function which
+   * returns such a list. In the latter case, the function will be called
+   * for each authentication attempt. The AbortSignal argument can be used
+   * to get insight into when the auth attempt is being aborted, by the
+   * driver or through some other means. (For example, this callback
+   * could be used to inform a user about the fact that re-authentication
+   * is required, and reject if they decline to do so.)
    */
-  allowedFlows?: AuthFlowType[];
+  allowedFlows?:
+    | AuthFlowType[]
+    | ((options: {
+        signal: AbortSignal;
+      }) => Promise<AuthFlowType[]> | AuthFlowType[]);
 
   /**
    * An optional EventEmitter that can be used for recording log events.

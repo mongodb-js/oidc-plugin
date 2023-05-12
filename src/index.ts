@@ -1,4 +1,4 @@
-export { createMongoDBOIDCPlugin } from './api';
+export { createMongoDBOIDCPlugin, ALL_AUTH_FLOW_TYPES } from './api';
 export type {
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,

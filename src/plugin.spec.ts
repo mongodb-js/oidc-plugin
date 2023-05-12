@@ -626,6 +626,27 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect((err as any).message).to.equal('Opening browser timed out');
       }
     });
+
+    it('handles a rejecting auth flow callback', async function () {
+      const allowedFlows = sinon
+        .stub()
+        .rejects(new Error('no authentication wanted'));
+      plugin = createMongoDBOIDCPlugin({
+        ...defaultOpts,
+        allowedFlows,
+      });
+      const result = requestToken(plugin, provider.getMongodbOIDCDBInfo());
+      try {
+        await result;
+        expect.fail('missed exception');
+      } catch (err) {
+        expect((err as any).message).to.equal('no authentication wanted');
+      }
+      expect(allowedFlows).to.have.been.calledOnce;
+      expect(allowedFlows.getCall(0).args[0].signal).to.be.instanceOf(
+        AbortSignal
+      );
+    });
   });
 
   context('when the server announces invalid configurations', function () {
