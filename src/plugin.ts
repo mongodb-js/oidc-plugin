@@ -31,6 +31,7 @@ import type {
   OpenBrowserOptions,
   OpenBrowserReturnType,
 } from './api';
+import { ALL_AUTH_FLOW_TYPES } from './api';
 import { kDefaultOpenBrowserTimeout } from './api';
 import { spawn } from 'child_process';
 
@@ -254,12 +255,20 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   // Is this flow supported and allowed?
-  private isFlowAllowed(flow: AuthFlowType): boolean {
-    if (this.options.allowedFlows?.includes(flow) === false) return false;
-    if (flow === 'auth-code' && this.options.openBrowser === false)
-      return false;
-    if (flow === 'device-auth' && !this.options.notifyDeviceFlow) return false;
-    return true;
+  private async getAllowedFlows({
+    signal,
+  }: {
+    signal: AbortSignal;
+  }): Promise<AuthFlowType[]> {
+    const flowList = new Set<AuthFlowType>(
+      typeof this.options.allowedFlows === 'function'
+        ? await this.options.allowedFlows({ signal })
+        : this.options.allowedFlows ?? ALL_AUTH_FLOW_TYPES
+    );
+    // Remove flows from the set whose prerequisites aren't fulfilled.
+    if (this.options.openBrowser === false) flowList.delete('auth-code');
+    if (!this.options.notifyDeviceFlow) flowList.delete('device-auth');
+    return [...flowList];
   }
 
   // Return the current state for a given [server, username] configuration,
@@ -285,11 +294,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     };
     this.mapIdpToAuthState.set(key, newState);
     return newState;
-  }
-
-  private getConfiguredRedirectURI(): string {
-    if (!this.isFlowAllowed('auth-code')) return '';
-    return this.options.redirectURI ?? 'http://localhost:27097/redirect';
   }
 
   private async getOIDCClient(
@@ -475,18 +479,22 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
   }
 
+  static readonly defaultRedirectURI = 'http://localhost:27097/redirect';
+
   private async authorizationCodeFlow(
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
     this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
+    const configuredRedirectURI =
+      this.options.redirectURI ?? MongoDBOIDCPluginImpl.defaultRedirectURI;
 
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
 
     const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
     const server = new RFC8252HTTPServer({
-      redirectUrl: this.getConfiguredRedirectURI(),
+      redirectUrl: configuredRedirectURI,
       logger: this.logger,
       redirectServerRequestHandler: this.options.redirectServerRequestHandler,
       oidcStateParam,
@@ -649,6 +657,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const signal = combinedAbortController.signal;
 
     try {
+      const currentAllowedFlowSet = await this.getAllowedFlows({ signal });
+
       get_tokens: {
         if ((state.currentTokenSet?.set?.expires_in ?? 0) > 5 * 60) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
@@ -664,7 +674,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         }
         state.currentTokenSet = null;
         let error;
-        if (this.isFlowAllowed('auth-code')) {
+        if (currentAllowedFlowSet.includes('auth-code')) {
           try {
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-started', {
               flow: 'auth-code',
@@ -681,7 +691,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
             if (!(err as any)?.[kEnableFallback]) throw err;
           }
         }
-        if (this.isFlowAllowed('device-auth')) {
+        if (currentAllowedFlowSet.includes('device-auth')) {
           try {
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-started', {
               flow: 'device-auth',
