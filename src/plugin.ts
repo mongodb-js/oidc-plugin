@@ -423,12 +423,16 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     };
 
     const timerDuration = automaticRefreshTimeoutMS(tokenSet);
+    // Use `.call()` because in browsers, `setTimeout()` requires that it is called
+    // without a `this` value. `.unref()` is not available in browsers either.
     let timer = timerDuration
-      ? this.timers.setTimeout(() => void tryRefresh(), timerDuration).unref()
+      ? this.timers.setTimeout
+          .call(null, () => void tryRefresh(), timerDuration)
+          ?.unref?.()
       : undefined;
     const tryRefresh = withLock(async () => {
       if (timer) {
-        this.timers.clearTimeout(timer);
+        this.timers.clearTimeout.call(null, timer);
         timer = undefined;
       }
       // Only refresh this token set if it is the one currently

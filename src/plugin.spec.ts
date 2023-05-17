@@ -206,25 +206,31 @@ describe('OIDC plugin (local OIDC provider)', function () {
           refed: boolean;
           cleared: boolean;
         }[] = [];
-        const setTimeout = sinon.stub().callsFake((fn, timeout) => {
-          const entry = {
-            fn,
-            timeout,
-            refed: true,
-            cleared: false,
-            ref() {
-              this.refed = true;
-            },
-            unref() {
-              this.refed = false;
-            },
-          };
-          timeouts.push(entry);
-          return entry;
-        });
+        const setTimeout = sinon
+          .stub()
+          .callsFake(function (this: null, fn, timeout) {
+            expect(this).to.equal(null);
+            const entry = {
+              fn,
+              timeout,
+              refed: true,
+              cleared: false,
+              ref() {
+                this.refed = true;
+              },
+              unref() {
+                this.refed = false;
+              },
+            };
+            timeouts.push(entry);
+            return entry;
+          });
         const clearTimeout = sinon
           .stub()
-          .callsFake((timer) => (timer.cleared = true));
+          .callsFake(function (this: null, timer) {
+            expect(this).to.equal(null);
+            timer.cleared = true;
+          });
         (
           publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.get(
             plugin
