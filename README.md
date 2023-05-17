@@ -29,6 +29,6 @@ const client = await MongoClient.connect(
 // ...
 ```
 
-See the TypeScript annontations for more API details.
+See the TypeScript annotations for more API details.
 
 [mongodb node.js driver]: https://github.com/mongodb/node-mongodb-native
