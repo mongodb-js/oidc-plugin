@@ -277,13 +277,17 @@ async function dumpHtml(browser: Browser | undefined): Promise<void> {
 
 async function waitForTitle(
   browser: Browser,
-  expected: string,
+  expected: string | RegExp,
   selector = 'h1'
 ): Promise<void> {
   await browser.waitUntil(async () => {
     const actual = (await browser.$(selector).getText()).trim();
-    if (actual.toLowerCase() !== expected.toLowerCase()) {
-      throw new Error(`Wanted title "${expected}", saw "${actual}"`);
+    let matches;
+    if (typeof expected === 'string')
+      matches = actual.toLowerCase() === expected.toLowerCase();
+    else matches = expected.test(actual);
+    if (!matches) {
+      throw new Error(`Wanted title "${String(expected)}", saw "${actual}"`);
     }
     return true;
   });
@@ -434,6 +438,67 @@ export async function oktaBrowserDeviceAuthFlow({
     await browser.$('input[type="submit"]').click();
 
     await waitForTitle(browser, 'Device activated', 'h2');
+  } finally {
+    await browser?.deleteSession();
+  }
+}
+
+async function azureSignIn(
+  browser: Browser,
+  username: string,
+  password: string
+): Promise<void> {
+  await waitForTitle(browser, 'Sign in', 'div[role="heading"]');
+  await ensureValue(browser, 'input[name="loginfmt"]', username);
+  await browser.$('input[type="submit"]').click();
+  await waitForTitle(browser, 'Enter password', 'div[role="heading"]');
+  await ensureValue(browser, 'input[name="passwd"]', password);
+  await browser.$('input[type="submit"]').click();
+}
+
+export async function azureBrowserAuthCodeFlow({
+  username,
+  password,
+  url,
+}: OpenBrowserOptions & UserPassCredentials): Promise<void> {
+  let browser: Browser | undefined;
+  try {
+    browser = await spawnBrowser(url, true);
+    await azureSignIn(browser, username, password);
+    await waitForLocalhostRedirect(browser);
+  } finally {
+    await browser?.deleteSession();
+  }
+}
+
+export async function azureBrowserDeviceAuthFlow({
+  username,
+  password,
+  verificationUrl,
+  userCode,
+}: DeviceFlowInformation & UserPassCredentials): Promise<void> {
+  let browser: Browser | undefined;
+  try {
+    const normalizeUserCode = (str: string) => str.replace(/-/g, '');
+    browser = await spawnBrowser(verificationUrl, true);
+    await waitForTitle(browser, 'Enter code', 'div[role="heading"]');
+    await ensureValue(
+      browser,
+      'input[name="otc"]',
+      userCode,
+      normalizeUserCode
+    );
+    await browser.$('input[type="submit"]').click();
+    await azureSignIn(browser, username, password);
+
+    await waitForTitle(
+      browser,
+      /Are you trying to sign in to/i,
+      'div[role="heading"]'
+    );
+    await browser.$('input[type="submit"]').click();
+
+    await waitForTitle(browser, /^[a-zA-Z0-9_]+$/, 'div[role="heading"]');
   } finally {
     await browser?.deleteSession();
   }
