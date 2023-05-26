@@ -3,7 +3,8 @@ import { expect } from 'chai';
 import type { Server as HTTPServer } from 'http';
 import { createServer as createHTTPServer } from 'http';
 import { EventEmitter, once } from 'events';
-import type { AddressInfo } from 'net';
+import type { AddressInfo} from 'net';
+import { createConnection } from 'net';
 import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
 import { AbortController } from './util';
@@ -361,6 +362,34 @@ describe('RFC8252HTTPServer', function () {
         expect((err as any).message).to.include('test_error');
       }
       expect(server.listeningPort).to.equal(undefined);
+    });
+
+    context('with lingering connections', function () {
+      it('does not delay closing the server but does close the connection', async function () {
+        const conveniencePromise = server.waitForOIDCParamsAndClose();
+        const params = new URLSearchParams([
+          ['foo', 'bar'],
+          ['baz', 'quux'],
+          ['state', oidcStateParam],
+        ]);
+        url.search = params.toString();
+        const socket = createConnection({
+          host: url.hostname,
+          port: +url.port,
+        });
+        const headers = 'Connection: keep-alive\r\nHost: ${url.host}\r\n';
+        socket.write(
+          `GET ${url.pathname}${url.search} HTTP/1.1\r\n${headers}\r\n`
+        );
+        await once(socket, 'data');
+        socket.write(`GET /success/ignored HTTP/1.1\r\n${headers}\r\n`);
+
+        // The server closes the socket, not us
+        const socketClose = once(socket, 'close');
+        expect(await conveniencePromise).to.equal(url.toString());
+        expect(server.listeningPort).to.equal(undefined);
+        await socketClose;
+      });
     });
   });
 

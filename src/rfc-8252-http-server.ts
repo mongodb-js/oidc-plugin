@@ -14,7 +14,7 @@ import type {
 } from './types';
 import { MongoDBOIDCError } from './types';
 import { withAbortCheck } from './util';
-import type { AddressInfo } from 'net';
+import type { AddressInfo, Socket } from 'net';
 import type {
   RedirectServerRequestHandler,
   RedirectServerRequestInfo,
@@ -36,6 +36,7 @@ export class RFC8252HTTPServer {
   private readonly redirectServerHandler: RedirectServerRequestHandler;
   private readonly logger: TypedEventEmitter<MongoDBOIDCLogEventsMap>;
   private servers: HTTPServer[] = [];
+  private clientConnections: Socket[] = [];
   private readonly expressApp: ReturnType<typeof express>;
   private readonly redirects = new Map<
     string,
@@ -442,6 +443,13 @@ export class RFC8252HTTPServer {
       // this is the correct thing to do.
       ipv6Only: family === 6 ? true : undefined,
     });
+    server.on('connection', (socket) => {
+      this.clientConnections.push(socket);
+      socket.on('close', () => {
+        const index = this.clientConnections.indexOf(socket);
+        if (index !== -1) this.clientConnections.splice(index, 1);
+      });
+    });
     return server;
   }
 
@@ -460,14 +468,27 @@ export class RFC8252HTTPServer {
     this.logger.emit('mongodb-oidc-plugin:local-server-close', {
       url: this.redirectUrl.toString(),
     });
-    const servers = this.servers;
+    // Node.js servers emit 'close' events in response to .close(),
+    // but we are not waiting for that here, because:
+    // - Those events are not actually correlated to the server closing, Node.js
+    //   just closes the underlying handle and ignores that that is an async operation
+    //   (https://github.com/nodejs/node/blob/38b82b0604d6515b281c6586d6999d2c67248e7f/lib/net.js#L2178)
+    // - Node.js does, however, wait for all incoming connections to be closed
+    //   before emitting the event. That can be convenient sometimes, but browsers
+    //   can keep idle connections open for a while as a sort of 'connection cache',
+    //   so waiting for the 'close' event would potentially delay this event indefinitely.
+    for (const server of this.servers) server.close();
     this.servers = [];
-    await Promise.all(
-      servers.map(async (server) => {
-        server.close();
-        await once(server, 'close');
-      })
-    );
+    for (const socket of this.clientConnections) {
+      // Close the open sockets. Not much point in waiting for a 'close'
+      // event here.
+      socket.on('error', () => {
+        /* ignore */
+      });
+      socket.destroy();
+    }
+    this.clientConnections = [];
+    return Promise.resolve(); // Keeping this async in case we ever need it to be.
   }
 
   /**
