@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import type { Server as HTTPServer } from 'http';
 import { createServer as createHTTPServer } from 'http';
 import { EventEmitter, once } from 'events';
-import type { AddressInfo} from 'net';
+import type { AddressInfo } from 'net';
 import { createConnection } from 'net';
 import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
