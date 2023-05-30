@@ -745,6 +745,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
     // See test/okta-setup.md for instructions on generating test config and credentials
     before(function () {
       if (!process.env.OKTA_TEST_CONFIG || !process.env.OKTA_TEST_CREDENTIALS) {
+        if (process.env.EVR_TASK_ID)
+          throw new Error('Missing Okta credentials');
         // eslint-disable-next-line no-console
         console.info('skipping Okta integration tests due to missing config');
         return this.skip();
@@ -813,8 +815,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
         !process.env.AZURE_TEST_CONFIG ||
         !process.env.AZURE_TEST_CREDENTIALS
       ) {
+        if (process.env.EVR_TASK_ID)
+          throw new Error('Missing Azure credentials');
         // eslint-disable-next-line no-console
-        console.info('skipping Okta integration tests due to missing config');
+        console.info('skipping Azure integration tests due to missing config');
         return this.skip();
       }
 
