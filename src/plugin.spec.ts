@@ -677,6 +677,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           ...defaultOpts,
           openBrowser,
           notifyDeviceFlow,
+          allowedFlows: ['auth-code', 'device-auth'],
         });
       });
 
