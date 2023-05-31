@@ -689,7 +689,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           });
           expect.fail('missed exception');
         } catch (err: any) {
-          expect(err.message).to.include("'issuer' is invalid");
+          expect(err.message).to.include("(validating: issuer)");
         }
         expect(notifyDeviceFlow).to.not.have.been.called;
         expect(openBrowser).to.not.have.been.called;
