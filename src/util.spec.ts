@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { validateSecureHTTPUrl } from './util';
 
 // Helper for avoiding many try/catches in this test
-function getErr(cb: () => void) {
+function getErr(cb: () => void): any {
   try {
     cb();
   } catch (err) {

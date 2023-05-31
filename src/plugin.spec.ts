@@ -689,7 +689,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           });
           expect.fail('missed exception');
         } catch (err: any) {
-          expect(err.message).to.include("(validating: issuer)");
+          expect(err.message).to.include('(validating: issuer)');
         }
         expect(notifyDeviceFlow).to.not.have.been.called;
         expect(openBrowser).to.not.have.been.called;
@@ -749,7 +749,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           issuer: 'http://somehost/',
         });
         expect.fail('missed exception');
-      } catch (err) {
+      } catch (err: any) {
         expect(err.message).to.equal(
           "Need to specify https: when accessing non-local URL 'http://somehost/' (validating: issuer)"
         );
@@ -797,7 +797,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
               }/`,
             });
             expect.fail('missed exception');
-          } catch (err) {
+          } catch (err: any) {
             expect(err.message).to.equal(
               `Need to specify https: when accessing non-local URL 'http://somehost/' (validating: ${endpoint})`
             );
