@@ -13,6 +13,7 @@ import {
   normalizeObject,
   throwIfAborted,
   timeoutSignal,
+  validateSecureHTTPUrl,
   withAbortCheck,
   withLock,
 } from './util';
@@ -274,6 +275,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   // Return the current state for a given [server, username] configuration,
   // or create a new one if none exists.
   private getAuthState(serverMetadata: IdPServerInfo): UserOIDCAuthState {
+    if (!serverMetadata.issuer || typeof serverMetadata.issuer !== 'string') {
+      throw new MongoDBOIDCError(`'issuer' is missing`);
+    }
+    validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
+
     if (!serverMetadata.clientId) {
       throw new MongoDBOIDCError(
         'No clientId passed in server OIDC metadata object'
@@ -326,7 +332,18 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       };
     }
 
+    validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
     const issuer = await Issuer.discover(serverMetadata.issuer);
+    validateSecureHTTPUrl(
+      issuer.metadata.authorization_endpoint,
+      'authorization_endpoint'
+    );
+    validateSecureHTTPUrl(
+      issuer.metadata.device_authorization_endpoint,
+      'device_authorization_endpoint'
+    );
+    validateSecureHTTPUrl(issuer.metadata.token_endpoint, 'token_endpoint');
+    validateSecureHTTPUrl(issuer.metadata.jwks_uri, 'jwks_uri');
     const client = new issuer.Client({
       client_id: serverMetadata.clientId,
       redirect_uris: redirectURIs,
@@ -379,6 +396,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private async notifyDeviceFlow(
     deviceFlowInformation: DeviceFlowInformation
   ): Promise<void> {
+    validateSecureHTTPUrl(
+      deviceFlowInformation.verificationUrl,
+      'verificationUrl'
+    );
     if (!this.options.notifyDeviceFlow) {
       // Should never happen.
       throw new MongoDBOIDCError(
@@ -465,31 +486,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     this.logger.emit('mongodb-oidc-plugin:state-updated');
   }
 
-  private verifyValidUrl(
-    serverOIDCMetadata: IdPServerInfo,
-    key: keyof IdPServerInfo
-  ): void {
-    // Verify that `key` refers to a valid URL. This is currently
-    // *not* an error that we allow to fall back from.
-    const value = serverOIDCMetadata[key];
-    if (!value || typeof value !== 'string') {
-      throw new MongoDBOIDCError(`'${key}' is missing`);
-    } else {
-      try {
-        new URL(value);
-      } catch {
-        throw new MongoDBOIDCError(`'${key}' is invalid: ${value}}`);
-      }
-    }
-  }
-
   static readonly defaultRedirectURI = 'http://localhost:27097/redirect';
 
   private async authorizationCodeFlow(
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
-    this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
     const configuredRedirectURI =
       this.options.redirectURI ?? MongoDBOIDCPluginImpl.defaultRedirectURI;
 
@@ -533,6 +535,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           code_challenge_method: 'S256',
           state: oidcStateParam,
         });
+        validateSecureHTTPUrl(authCodeFlowUrl, 'authCodeFlowUrl');
         const { localUrl, onAccessed: onLocalUrlAccessed } =
           await server.addRedirect(authCodeFlowUrl);
 
@@ -616,8 +619,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
-    this.verifyValidUrl(state.serverOIDCMetadata, 'issuer');
-
     const { scope, client } = await this.getOIDCClient(state);
 
     await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
