@@ -17,6 +17,7 @@ const config = {
   openBrowser: {
     command: 'open -a "Firefox"',
   },
+  // allowedFlows: ['auth-code', 'device-auth'], // if Device Auth Grant flow is required
 };
 
 const client = await MongoClient.connect(

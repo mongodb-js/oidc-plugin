@@ -438,6 +438,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
     it('skips auth code flow if browser interactions is disallowed', async function () {
       const plugin = createMongoDBOIDCPlugin({
         ...defaultOpts,
+        allowedFlows: ['auth-code', 'device-auth'],
         openBrowser: false,
         notifyDeviceFlow() {
           throw new Error('device auth');
@@ -470,6 +471,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
     beforeEach(function () {
       plugin = createMongoDBOIDCPlugin({
         ...defaultOpts,
+        allowedFlows: ['auth-code', 'device-auth'],
         redirectURI: 'http://192.0.2.1:1/', // fixed test IP address
         openBrowser: () => Promise.reject(new Error('unreachable')),
         notifyDeviceFlow: functioningDeviceAuthBrowserFlow,
@@ -678,6 +680,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           ...defaultOpts,
           openBrowser,
           notifyDeviceFlow,
+          allowedFlows: ['auth-code', 'device-auth'],
         });
       });
 

@@ -32,7 +32,6 @@ import type {
   OpenBrowserOptions,
   OpenBrowserReturnType,
 } from './api';
-import { ALL_AUTH_FLOW_TYPES } from './api';
 import { kDefaultOpenBrowserTimeout } from './api';
 import { spawn } from 'child_process';
 
@@ -264,7 +263,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const flowList = new Set<AuthFlowType>(
       typeof this.options.allowedFlows === 'function'
         ? await this.options.allowedFlows({ signal })
-        : this.options.allowedFlows ?? ALL_AUTH_FLOW_TYPES
+        : this.options.allowedFlows ?? ['auth-code']
     );
     // Remove flows from the set whose prerequisites aren't fulfilled.
     if (this.options.openBrowser === false) flowList.delete('auth-code');
