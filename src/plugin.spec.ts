@@ -27,6 +27,9 @@ import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-h
 import { automaticRefreshTimeoutMS } from './plugin';
 import sinon from 'sinon';
 import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
+import type { Server as HTTPServer } from 'http';
+import { createServer as createHTTPServer } from 'http';
+import type { AddressInfo } from 'net';
 
 // Shorthand to avoid having to specify `principalName` and `abortSignal`
 // if they aren't being used in the first place.
@@ -686,7 +689,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           });
           expect.fail('missed exception');
         } catch (err: any) {
-          expect(err.message).to.include("'issuer' is invalid");
+          expect(err.message).to.include('(validating: issuer)');
         }
         expect(notifyDeviceFlow).to.not.have.been.called;
         expect(openBrowser).to.not.have.been.called;
@@ -729,6 +732,78 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: -10 })
       ).to.equal(undefined);
+    });
+  });
+
+  describe('issuer URL validation', function () {
+    beforeEach(function () {
+      plugin = createMongoDBOIDCPlugin({
+        ...defaultOpts,
+      });
+    });
+
+    it('rejects an issuer endpoint without https:', async function () {
+      try {
+        await requestToken(plugin, {
+          clientId: 'clientId',
+          issuer: 'http://somehost/',
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.equal(
+          "Need to specify https: when accessing non-local URL 'http://somehost/' (validating: issuer)"
+        );
+      }
+    });
+
+    context('with an issuer that reports custom metadata', function () {
+      let server: HTTPServer;
+      let response: Record<string, unknown>;
+
+      beforeEach(async function () {
+        response = {};
+        server = createHTTPServer((req, res) => {
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify(response));
+        });
+        server.listen();
+        await once(server, 'listening');
+      });
+
+      afterEach(async function () {
+        server.close();
+        await once(server, 'close');
+      });
+
+      for (const endpoint of [
+        'authorization_endpoint',
+        'device_authorization_endpoint',
+        'token_endpoint',
+        'jwks_uri',
+      ]) {
+        it(`rejects an ${endpoint} endpoint which reports non-https endpoints`, async function () {
+          response = {
+            authorization_endpoint: 'https://somehost/',
+            device_authorization_endpoint: 'https://somehost/',
+            token_endpoint: 'https://somehost/',
+            jwks_uri: 'https://somehost/',
+            [endpoint]: 'http://somehost/',
+          };
+          try {
+            await requestToken(plugin, {
+              clientId: 'clientId',
+              issuer: `http://localhost:${
+                (server.address() as AddressInfo).port
+              }/`,
+            });
+            expect.fail('missed exception');
+          } catch (err: any) {
+            expect(err.message).to.equal(
+              `Need to specify https: when accessing non-local URL 'http://somehost/' (validating: ${endpoint})`
+            );
+          }
+        });
+      }
     });
   });
 

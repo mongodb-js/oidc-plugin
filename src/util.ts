@@ -83,3 +83,36 @@ export function withLock<T extends (...args: any[]) => Promise<any>>(
 export function normalizeObject<T extends object>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).sort()) as T;
 }
+
+// Throws if the url does not refer to an https: endpoint or a local endpoint, or null or undefined.
+export function validateSecureHTTPUrl(
+  url: unknown,
+  diagnosticId: string
+): void {
+  try {
+    if (url == null) return;
+    if (typeof url !== 'string')
+      throw new Error(`Expected string, got ${typeof url} instead`);
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:') return;
+    if (parsed.protocol !== 'http:') {
+      throw new Error(`Unknown protocol '${parsed.protocol}' '${url}'`);
+    }
+    if (!/^(\[::1\]|127(\.\d+){3}|localhost)$/.test(parsed.hostname)) {
+      throw new Error(
+        `Need to specify https: when accessing non-local URL '${url}'`
+      );
+    }
+  } catch (err: unknown) {
+    if (
+      !err ||
+      typeof err !== 'object' ||
+      !('message' in err) ||
+      typeof err.message !== 'string'
+    ) {
+      throw err;
+    }
+    err.message += ` (validating: ${diagnosticId})`;
+    throw err;
+  }
+}
