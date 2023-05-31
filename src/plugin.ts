@@ -31,7 +31,6 @@ import type {
   OpenBrowserOptions,
   OpenBrowserReturnType,
 } from './api';
-import { ALL_AUTH_FLOW_TYPES } from './api';
 import { kDefaultOpenBrowserTimeout } from './api';
 import { spawn } from 'child_process';
 
