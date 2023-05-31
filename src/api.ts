@@ -105,6 +105,12 @@ export interface MongoDBOIDCPluginOptions {
   /**
    * Restrict possible OIDC authorization flows to a subset.
    *
+   * The default value is `['auth-code']`, i.e. the Device Authorization Grant
+   * flow is not enabled by default and needs to be enabled explicitly.
+   *
+   * Order of the entries is not relevant. The Authorization Code Flow always
+   * takes precedence over the Device Authorization Grant flow.
+   *
    * This can either be a static list of supported flows or a function which
    * returns such a list. In the latter case, the function will be called
    * for each authentication attempt. The AbortSignal argument can be used
