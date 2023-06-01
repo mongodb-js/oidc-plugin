@@ -14,6 +14,8 @@ import { EventEmitter } from 'events';
 import { promises as fs } from 'fs';
 import {
   abortBrowserFlow,
+  azureBrowserAuthCodeFlow,
+  azureBrowserDeviceAuthFlow,
   functioningAuthCodeBrowserFlow,
   functioningDeviceAuthBrowserFlow,
   OIDCTestProvider,
@@ -821,6 +823,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
     // See test/okta-setup.md for instructions on generating test config and credentials
     before(function () {
       if (!process.env.OKTA_TEST_CONFIG || !process.env.OKTA_TEST_CREDENTIALS) {
+        if (process.env.EVR_TASK_ID)
+          throw new Error('Missing Okta credentials');
         // eslint-disable-next-line no-console
         console.info('skipping Okta integration tests due to missing config');
         return this.skip();
@@ -868,6 +872,76 @@ describe('OIDC plugin (local OIDC provider)', function () {
         allowedFlows: ['device-auth'],
         notifyDeviceFlow: (opts) =>
           oktaBrowserDeviceAuthFlow({ ...opts, username, password }),
+      });
+      const result = await requestToken(plugin, metadata);
+      validateToken(getJWTContents(result.accessToken));
+    });
+  });
+
+  describe('Azure integration tests', function () {
+    let metadata: IdPServerInfo;
+    let username: string;
+    let password: string;
+    let issuer: string;
+    let clientId: string;
+    let requestScopes: string[];
+    let validateToken: (token: Record<string, unknown>) => void;
+
+    // See comments on MONGOSH-1387 for instructions on generating test config and credentials
+    before(function () {
+      if (
+        !process.env.AZURE_TEST_CONFIG ||
+        !process.env.AZURE_TEST_CREDENTIALS
+      ) {
+        if (process.env.EVR_TASK_ID)
+          throw new Error('Missing Azure credentials');
+        // eslint-disable-next-line no-console
+        console.info('skipping Azure integration tests due to missing config');
+        return this.skip();
+      }
+
+      [issuer, clientId, requestScopes] = JSON.parse(
+        process.env.AZURE_TEST_CONFIG || ''
+      );
+      [username, password] = JSON.parse(
+        process.env.AZURE_TEST_CREDENTIALS || ''
+      );
+      metadata = {
+        clientId,
+        issuer,
+        requestScopes,
+      };
+      validateToken = (token) => {
+        expect(token.preferred_username).to.equal(username);
+        expect(token.sub).to.be.a('string'); // Azure 'sub' and 'groups' fields are opaque identifiers
+        expect(token.aud).to.equal(clientId);
+        expect(token.azp).to.equal(clientId);
+        expect(token.iss).to.equal(issuer);
+        expect(token.ver).to.equal('2.0');
+        expect(token.groups).to.be.an('array');
+        expect((token.groups as unknown[])[0]).to.be.a('string');
+      };
+    });
+
+    it('can successfully authenticate with Azure using auth code flow', async function () {
+      plugin = createMongoDBOIDCPlugin({
+        ...defaultOpts,
+        allowedFlows: ['auth-code'],
+        openBrowser: (opts) =>
+          azureBrowserAuthCodeFlow({ ...opts, username, password }),
+      });
+      const result = await requestToken(plugin, metadata);
+
+      validateToken(getJWTContents(result.accessToken));
+      verifySuccessfulAuthCodeFlowLog(await readLog());
+    });
+
+    it('can successfully authenticate with Azure using device auth flow', async function () {
+      plugin = createMongoDBOIDCPlugin({
+        ...defaultOpts,
+        allowedFlows: ['device-auth'],
+        notifyDeviceFlow: (opts) =>
+          azureBrowserDeviceAuthFlow({ ...opts, username, password }),
       });
       const result = await requestToken(plugin, metadata);
       validateToken(getJWTContents(result.accessToken));
