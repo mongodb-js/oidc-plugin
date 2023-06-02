@@ -361,8 +361,18 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   private async openBrowser(
     options: OpenBrowserOptions
   ): Promise<OpenBrowserReturnType> {
-    // Consistency check: options.url is a valid URL.
+    // Consistency check: options.url is a valid URL and does not contain
+    // characters that would have special semantics when passed to a
+    // child process spawned with `shell: true`.
+    // That might not be true for the URL we got from the IdP, but since we
+    // wrap it in our own redirect first anyway, we can guarantee that the
+    // URL has this format.
     new URL(options.url);
+    if (!/^[a-zA-Z0-9%/:;_.,=@-]+$/.test(options.url)) {
+      throw new MongoDBOIDCError(
+        `Unexpected format for internally generated URL: '${options.url}'`
+      );
+    }
     this.logger.emit('mongodb-oidc-plugin:open-browser', {
       customOpener: !!this.options.openBrowser,
     });
