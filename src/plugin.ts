@@ -369,7 +369,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // URL has this format.
     new URL(options.url);
     if (!/^[a-zA-Z0-9%/:;_.,=@-]+$/.test(options.url)) {
-      throw new MongoDBOIDCError(`Unexpected format for internally generated URL: '${options.url}'`);
+      throw new MongoDBOIDCError(
+        `Unexpected format for internally generated URL: '${options.url}'`
+      );
     }
     this.logger.emit('mongodb-oidc-plugin:open-browser', {
       customOpener: !!this.options.openBrowser,
