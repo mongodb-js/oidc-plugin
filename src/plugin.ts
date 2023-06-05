@@ -785,11 +785,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         : undefined);
 
     const newAuthAttempt = this.initiateAuthAttempt(state, driverAbortSignal);
-    state.currentAuthAttempt = newAuthAttempt;
-    newAuthAttempt.finally(() => {
+    try {
+      state.currentAuthAttempt = newAuthAttempt;
+      return await newAuthAttempt;
+    } finally {
       if (state.currentAuthAttempt === newAuthAttempt)
         state.currentAuthAttempt = null;
-    });
-    return newAuthAttempt;
+    }
   }
 }
