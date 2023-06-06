@@ -671,8 +671,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const signal = combinedAbortController.signal;
 
     try {
-      const currentAllowedFlowSet = await this.getAllowedFlows({ signal });
-
       get_tokens: {
         if ((state.currentTokenSet?.set?.expires_in ?? 0) > 5 * 60) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
@@ -688,6 +686,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         }
         state.currentTokenSet = null;
         let error;
+        const currentAllowedFlowSet = await this.getAllowedFlows({ signal });
         if (currentAllowedFlowSet.includes('auth-code')) {
           try {
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-started', {

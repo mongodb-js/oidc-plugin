@@ -393,6 +393,44 @@ describe('OIDC plugin (local OIDC provider)', function () {
         }
       });
     });
+
+    context('with a dynamic flow selection function', function () {
+      beforeEach(function () {
+        (pluginOptions.allowedFlows = sinon.stub().resolves(['auth-code'])),
+          (plugin = createMongoDBOIDCPlugin(pluginOptions));
+      });
+      it('will not call that callback when refreshing tokens', async function () {
+        const skipAuthAttemptEvent = once(
+          logger,
+          'mongodb-oidc-plugin:skip-auth-attempt'
+        );
+        provider.accessTokenTTLSeconds = 1;
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'refresh-succeeded' },
+        ]);
+        expect(pluginOptions.allowedFlows).to.have.been.calledOnce;
+      });
+
+      it('will call the callback before performing a full auth', async function () {
+        const startedAuthAttempts: unknown[] = [];
+        logger.on('mongodb-oidc-plugin:auth-attempt-started', (data) =>
+          startedAuthAttempts.push(data)
+        );
+
+        provider.accessTokenTTLSeconds = 1;
+        provider.refreshTokenTTLSeconds = 1;
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        await delay(1000);
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        expect(startedAuthAttempts).to.deep.equal([
+          { flow: 'auth-code' },
+          { flow: 'auth-code' },
+        ]);
+        expect(pluginOptions.allowedFlows).to.have.been.calledTwice;
+      });
+    });
   });
 
   context('when the user aborts an auth code flow', function () {
