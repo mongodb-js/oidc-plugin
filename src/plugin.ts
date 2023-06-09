@@ -49,6 +49,9 @@ interface UserOIDCAuthState {
     set: TokenSet;
     tryRefresh(): Promise<boolean>;
   } | null;
+  // A timer attached to this state that automatically calls
+  // currentTokenSet.tryRefresh() before the token expires.
+  timer?: ReturnType<typeof setTimeout>;
   // The `sub` and `aud` claims in the ID token of the last-received
   // TokenSet, if any.
   lastIdTokenClaims?: Pick<IdTokenClaims, 'aud' | 'sub'>;
@@ -157,6 +160,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     setTimeout: typeof setTimeout;
     clearTimeout: typeof clearTimeout;
   };
+  private destroyed = false;
 
   constructor(options: Readonly<MongoDBOIDCPluginOptions>) {
     this.options = options;
@@ -455,15 +459,19 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const timerDuration = automaticRefreshTimeoutMS(tokenSet);
     // Use `.call()` because in browsers, `setTimeout()` requires that it is called
     // without a `this` value. `.unref()` is not available in browsers either.
-    let timer = timerDuration
-      ? this.timers.setTimeout
-          .call(null, () => void tryRefresh(), timerDuration)
-          ?.unref?.()
+    if (state.timer) this.timers.clearTimeout.call(null, state.timer);
+    state.timer = timerDuration
+      ? this.timers.setTimeout.call(
+          null,
+          () => void tryRefresh(),
+          timerDuration
+        )
       : undefined;
+    state.timer?.unref?.();
     const tryRefresh = withLock(async () => {
-      if (timer) {
-        this.timers.clearTimeout.call(null, timer);
-        timer = undefined;
+      if (state.timer) {
+        this.timers.clearTimeout.call(null, state.timer);
+        state.timer = undefined;
       }
       // Only refresh this token set if it is the one currently
       // being used.
@@ -767,6 +775,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       );
     }
 
+    if (this.destroyed) {
+      throw new MongoDBOIDCError(
+        'This OIDC plugin instance has been destroyed and is no longer active'
+      );
+    }
+
     const state = this.getAuthState(serverMetadata);
 
     if (state.currentAuthAttempt) {
@@ -791,5 +805,17 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       if (state.currentAuthAttempt === newAuthAttempt)
         state.currentAuthAttempt = null;
     }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  public async destroy(): Promise<void> {
+    this.destroyed = true;
+    for (const [, state] of this.mapIdpToAuthState) {
+      if (state.timer) {
+        this.timers.clearTimeout.call(null, state.timer);
+        state.timer = undefined;
+      }
+    }
+    this.logger.emit('mongodb-oidc-plugin:destroyed');
   }
 }

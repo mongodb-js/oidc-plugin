@@ -45,6 +45,7 @@ export interface MongoDBOIDCLogEventsMap {
     hasRefreshToken: boolean;
     expiresAt: string | null;
   }) => void;
+  'mongodb-oidc-plugin:destroyed': () => void;
 }
 
 /** @public */
