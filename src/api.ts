@@ -204,6 +204,12 @@ export interface MongoDBOIDCPlugin {
    * store it without appropriate security mechanisms in place.
    */
   serialize(): Promise<string>;
+
+  /**
+   * Destroy this plugin instance. Currently, this only clears timers
+   * for automatic token refreshing.
+   */
+  destroy(): Promise<void>;
 }
 
 /** @internal */
@@ -234,6 +240,7 @@ export function createMongoDBOIDCPlugin(
     mongoClientOptions: plugin.mongoClientOptions,
     logger: plugin.logger,
     serialize: plugin.serialize.bind(plugin),
+    destroy: plugin.destroy.bind(plugin),
   };
   publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.set(
     publicPlugin,

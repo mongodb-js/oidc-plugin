@@ -204,44 +204,46 @@ describe('OIDC plugin (local OIDC provider)', function () {
     });
 
     context('with automatic token refresh', function () {
-      it('will automatically refresh tokens', async function () {
-        const timeouts: {
-          fn: () => void;
-          timeout: number;
-          refed: boolean;
-          cleared: boolean;
-        }[] = [];
-        const setTimeout = sinon
-          .stub()
-          .callsFake(function (this: null, fn, timeout) {
-            expect(this).to.equal(null);
-            const entry = {
-              fn,
-              timeout,
-              refed: true,
-              cleared: false,
-              ref() {
-                this.refed = true;
-              },
-              unref() {
-                this.refed = false;
-              },
-            };
-            timeouts.push(entry);
-            return entry;
-          });
-        const clearTimeout = sinon
-          .stub()
-          .callsFake(function (this: null, timer) {
-            expect(this).to.equal(null);
-            timer.cleared = true;
-          });
+      let timeouts: {
+        fn: () => void;
+        timeout: number;
+        refed: boolean;
+        cleared: boolean;
+      }[] = [];
+      let setTimeout: sinon.SinonStub;
+      let clearTimeout: sinon.SinonStub;
+
+      beforeEach(function () {
+        timeouts = [];
+        setTimeout = sinon.stub().callsFake(function (this: null, fn, timeout) {
+          expect(this).to.equal(null);
+          const entry = {
+            fn,
+            timeout,
+            refed: true,
+            cleared: false,
+            ref() {
+              this.refed = true;
+            },
+            unref() {
+              this.refed = false;
+            },
+          };
+          timeouts.push(entry);
+          return entry;
+        });
+        clearTimeout = sinon.stub().callsFake(function (this: null, timer) {
+          expect(this).to.equal(null);
+          timer.cleared = true;
+        });
         (
           publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.get(
             plugin
           ) as any
         ).timers = { setTimeout, clearTimeout };
+      });
 
+      it('will automatically refresh tokens', async function () {
         // Set to a fixed value, high enough to not expire and allow refreshes
         provider.accessTokenTTLSeconds = 10000;
         const result1 = await requestToken(
@@ -279,6 +281,21 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
         expect(await skipEvent).to.deep.equal([{ reason: 'not-expired' }]);
       });
+
+      it('clears token refresh timers on destroy', async function () {
+        // Set to a fixed value, high enough to not expire and allow refreshes
+        provider.accessTokenTTLSeconds = 10000;
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+
+        expect(timeouts).to.have.lengthOf(1);
+        expect(timeouts[0].refed).to.equal(false);
+        expect(timeouts[0].cleared).to.equal(false);
+        await plugin.destroy();
+
+        expect(timeouts).to.have.lengthOf(1);
+        expect(timeouts[0].refed).to.equal(false);
+        expect(timeouts[0].cleared).to.equal(true);
+      });
     });
 
     context('when re-created from a serialized state', function () {
@@ -296,6 +313,17 @@ describe('OIDC plugin (local OIDC provider)', function () {
           'lastIdTokenClaims',
           'serverOIDCMetadata',
         ]);
+      });
+
+      it('returns serialized state even after .destroy()', async function () {
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        await plugin.destroy();
+        const rawData = await plugin.serialize();
+        const serializedData = JSON.parse(
+          Buffer.from(rawData, 'base64').toString('utf8')
+        );
+        expect(serializedData.oidcPluginStateVersion).to.equal(0);
+        expect(serializedData.state).to.have.lengthOf(1);
       });
 
       it('can use access tokens from the serialized state', async function () {

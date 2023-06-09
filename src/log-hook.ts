@@ -251,4 +251,13 @@ export function hookLoggerToMongoLogWriter(
       }
     );
   });
+
+  emitter.on('mongodb-oidc-plugin:destroyed', () => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_021),
+      `${contextPrefix}-oidc`,
+      'Destroyed OIDC plugin instance'
+    );
+  });
 }
