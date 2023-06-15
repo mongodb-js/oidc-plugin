@@ -52,6 +52,7 @@ export interface MongoDBOIDCLogEventsMap {
 export interface TypedEventEmitter<EventMap extends object> {
   // TypeScript uses something like this itself for its EventTarget definitions.
   on<K extends keyof EventMap>(event: K, listener: EventMap[K]): this;
+  off?<K extends keyof EventMap>(event: K, listener: EventMap[K]): this;
   once<K extends keyof EventMap>(event: K, listener: EventMap[K]): this;
   emit<K extends keyof EventMap>(
     event: K,
