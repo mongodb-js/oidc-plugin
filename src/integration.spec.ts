@@ -25,7 +25,7 @@ async function fetchBrowser({ url }: OpenBrowserOptions): Promise<void> {
   (await fetch(url)).body?.resume();
 }
 
-describe.only('integration test with mongod', function () {
+describe('integration test with mongod', function () {
   this.timeout(90_000);
 
   let tmpDir: string;
