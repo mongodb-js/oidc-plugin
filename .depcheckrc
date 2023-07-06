@@ -1,6 +1,10 @@
 ignores:
+ - '@mongodb-js/eslint-config-devtools'
  - '@mongodb-js/prettier-config-compass'
  - '@mongodb-js/tsconfig-compass'
+ - '@typescript-eslint/eslint-plugin'
+ - '@typescript-eslint/parser'
+ - 'eslint-plugin-mocha'
  - '@types/chai'
  - '@types/node'
  - '@types/sinon-chai'
@@ -8,5 +12,7 @@ ignores:
  - 'node-fetch'
  - 'rimraf'
  - 'process-on-spawn'
+
 ignore-patterns:
  - 'dist'
+ - .eslintrc.js

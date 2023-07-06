@@ -80,6 +80,7 @@ export function withLock<T extends (...args: any[]) => Promise<any>>(
 }
 
 // Normalize JS objects by sorting keys so that {a:1,b:2} and {b:2,a:1} are equivalent.
+// eslint-disable-next-line @typescript-eslint/ban-types
 export function normalizeObject<T extends object>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).sort()) as T;
 }

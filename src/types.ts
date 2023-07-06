@@ -49,6 +49,7 @@ export interface MongoDBOIDCLogEventsMap {
 }
 
 /** @public */
+// eslint-disable-next-line @typescript-eslint/ban-types
 export interface TypedEventEmitter<EventMap extends object> {
   // TypeScript uses something like this itself for its EventTarget definitions.
   on<K extends keyof EventMap>(event: K, listener: EventMap[K]): this;

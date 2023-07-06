@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function verifySuccessfulAuthCodeFlowLog(entries: any[]) {
+export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
   for (const expected of [
     {
       t: { $date: '2021-12-16T14:35:08.763Z' },
