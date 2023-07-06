@@ -48,15 +48,18 @@
     "test-cov": "nyc -x \"**/*.spec.*\" --reporter=lcov --reporter=text --reporter=html npm run test",
     "test-watch": "npm run test -- --watch",
     "test-ci": "npm run test-cov",
-    "reformat": "npm run prettier -- --write . && npm run eslint . -- --fix"
+    "reformat": "npm run prettier -- --write . && npm run eslint . -- --fix",
+    "prepare": "husky install",
+    "precommit": "precommit"
   },
   "devDependencies": {
     "@microsoft/api-extractor": "^7.34.4",
+    "@mongodb-js/eslint-config-devtools": "^0.9.4",
     "@mongodb-js/mocha-config-compass": "^1.2.0",
+    "@mongodb-js/monorepo-tools": "^1.1.4",
     "@mongodb-js/oidc-mock-provider": "^0.6.2",
     "@mongodb-js/prettier-config-devtools": "^1.0.1",
     "@mongodb-js/tsconfig-compass": "^1.0.1",
-    "@mongodb-js/eslint-config-devtools": "^0.9.4",
     "@types/chai": "^4.2.21",
     "@types/express": "^4.17.17",
     "@types/mocha": "^9.0.0",
@@ -72,6 +75,7 @@
     "eslint": "^7.25.0",
     "eslint-plugin-mocha": "^8.0.0",
     "gen-esm-wrapper": "^1.1.0",
+    "husky": "^8.0.3",
     "mocha": "^10.2.0",
     "mongodb": "^5.4.0",
     "mongodb-log-writer": "^1.1.5",
