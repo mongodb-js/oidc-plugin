@@ -91,6 +91,7 @@ export function validateSecureHTTPUrl(
   diagnosticId: string
 ): void {
   try {
+    // eslint-disable-next-line eqeqeq
     if (url == null) return;
     if (typeof url !== 'string')
       throw new Error(`Expected string, got ${typeof url} instead`);
