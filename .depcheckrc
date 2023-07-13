@@ -1,7 +1,7 @@
 ignores:
  - '@mongodb-js/eslint-config-devtools'
  - '@mongodb-js/prettier-config-devtools'
- - '@mongodb-js/tsconfig-compass'
+ - '@mongodb-js/tsconfig-devtools'
  - '@typescript-eslint/eslint-plugin'
  - '@typescript-eslint/parser'
  - 'eslint-plugin-mocha'
