@@ -262,6 +262,10 @@ export type RedirectServerRequestInfo = {
   status: number;
 } & (
   | {
+      result: 'redirecting';
+      location: string;
+    }
+  | {
       result: 'rejected';
       /** Error information reported by the IdP as defined in RFC6749 section 4.1.2.1 */
       error?: string;

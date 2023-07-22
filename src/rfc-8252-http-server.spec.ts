@@ -411,6 +411,16 @@ describe('RFC8252HTTPServer', function () {
       url = new URL(server.listeningRedirectUrl || '');
     });
 
+    it('handles redirecting case', async function () {
+      const { localUrl } = await server.addRedirect('http://example.com');
+      const res = await fetch(localUrl, { follow: 0 });
+      expect(res.status).to.eq(307);
+      expect(await res.json()).to.have.property(
+        'location',
+        'http://example.com'
+      );
+    });
+
     it('handles the success case', async function () {
       const params = new URLSearchParams([
         ['foo', 'bar'],

@@ -123,9 +123,13 @@ export class RFC8252HTTPServer {
     // This can be helpful for figuring out whether a browser was
     // opened successfully.
     entry.onAccessed();
-    res.status(307);
-    res.set('Location', entry.targetUrl);
-    res.send();
+    this.redirectServerHandler({
+      req,
+      res,
+      status: 307,
+      result: 'redirecting',
+      location: entry.targetUrl,
+    });
   };
 
   private _handleOIDCCallback: RequestHandler = (req, res) => {
@@ -515,6 +519,10 @@ function defaultRedirectServerHandler(info: RedirectServerRequestInfo): void {
   res.statusCode = status;
   res.setHeader('Content-Type', 'text/plain');
   switch (result) {
+    case 'redirecting':
+      res.setHeader('Location', info.location);
+      res.end('Redirecting...');
+      return;
     case 'accepted':
       res.end('Authentication successful! You can close this window now.');
       return;
