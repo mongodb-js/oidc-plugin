@@ -28,6 +28,7 @@ import type {
   AuthFlowType,
   DeviceFlowInformation,
   MongoDBOIDCPlugin,
+  MongoDBOIDCPluginEventEmitter,
   MongoDBOIDCPluginOptions,
   OpenBrowserOptions,
   OpenBrowserReturnType,
@@ -71,6 +72,9 @@ async function getDefaultOpenBrowser(): Promise<
   if (process.versions.electron && _electron !== 'cannot-require') {
     try {
       _electron ??= await import('electron');
+      if (typeof (_electron as any).default === 'string') {
+        throw new Error('Electron import in Node.js environment');
+      }
       return ({ url }) =>
         // eslint-disable-next-line @typescript-eslint/consistent-type-imports
         (_electron as typeof import('electron')).shell.openExternal(url);
@@ -161,6 +165,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     clearTimeout: typeof clearTimeout;
   };
   private destroyed = false;
+  private emitter: Pick<MongoDBOIDCPluginEventEmitter, 'on' | 'off' | 'emit'> &
+    Pick<EventEmitter, 'removeAllListeners'> = new EventEmitter();
 
   constructor(options: Readonly<MongoDBOIDCPluginOptions>) {
     this.options = options;
@@ -477,17 +483,28 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       // being used.
       if (state.currentTokenSet?.set !== tokenSet) return false;
       try {
+        this.emitter.emit('token-expired', state.serverOIDCMetadata);
         this.logger.emit('mongodb-oidc-plugin:refresh-started');
 
         const { client } = await this.getOIDCClient(state);
         const refreshedTokens = await client.refresh(tokenSet);
         // Check again to avoid race conditions.
         if (state.currentTokenSet?.set === tokenSet) {
+          if (!tokenSet.access_token) {
+            throw new Error(
+              "Token refresh succeeded, but didn't return an access_token"
+            );
+          }
+          this.emitter.emit('token-renewed', state.serverOIDCMetadata, {
+            accessToken: tokenSet.access_token,
+            refreshToken: tokenSet.refresh_token,
+          });
           this.logger.emit('mongodb-oidc-plugin:refresh-succeeded');
           this.updateStateWithTokenSet(state, refreshedTokens);
           return true;
         }
       } catch (err: unknown) {
+        this.emitter.emit('token-error', state.serverOIDCMetadata, err);
         this.logger.emit('mongodb-oidc-plugin:refresh-failed', {
           error: errorString(err),
         });
@@ -678,6 +695,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     driverAbortSignal?.addEventListener('abort', driverAbortCb);
     const signal = combinedAbortController.signal;
 
+    let issuedByRefresh = false;
+
     try {
       get_tokens: {
         if ((state.currentTokenSet?.set?.expires_in ?? 0) > 5 * 60) {
@@ -687,6 +706,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           break get_tokens;
         }
         if (await state.currentTokenSet?.tryRefresh?.()) {
+          issuedByRefresh = true;
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
             reason: 'refresh-succeeded',
           });
@@ -741,6 +761,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     } finally {
       this.options.signal?.removeEventListener('abort', optionsAbortCb);
       driverAbortSignal?.removeEventListener('abort', driverAbortCb);
+    }
+
+    if (!issuedByRefresh) {
+      this.emitter.emit('token-issued', state.serverOIDCMetadata, {
+        accessToken: state.currentTokenSet.set.access_token,
+        refreshToken: state.currentTokenSet.set.refresh_token,
+      });
     }
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
@@ -810,6 +837,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   // eslint-disable-next-line @typescript-eslint/require-await
   public async destroy(): Promise<void> {
     this.destroyed = true;
+    this.emitter.removeAllListeners();
     for (const [, state] of this.mapIdpToAuthState) {
       if (state.timer) {
         this.timers.clearTimeout.call(null, state.timer);
@@ -818,4 +846,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
     this.logger.emit('mongodb-oidc-plugin:destroyed');
   }
+
+  public on = this.emitter.on.bind(this.emitter);
+
+  public off = this.emitter.off?.bind(this.emitter);
 }

@@ -4,6 +4,8 @@ import type {
 } from 'http';
 import { MongoDBOIDCPluginImpl } from './plugin';
 import type {
+  IdPServerInfo,
+  IdPServerResponse,
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
   OIDCRefreshFunction,
@@ -178,6 +180,14 @@ export interface MongoDBOIDCPluginMongoClientOptions {
 }
 
 /** @public */
+export type MongoDBOIDCPluginEventEmitter = TypedEventEmitter<{
+  'token-issued': (info: IdPServerInfo, response: IdPServerResponse) => void;
+  'token-expired': (info: IdPServerInfo) => void;
+  'token-renewed': (info: IdPServerInfo, response: IdPServerResponse) => void;
+  'token-error': (info: IdPServerInfo, err: any) => void;
+}>;
+
+/** @public */
 export interface MongoDBOIDCPlugin {
   /**
    * A subset of MongoClientOptions that need to be set in order
@@ -210,6 +220,10 @@ export interface MongoDBOIDCPlugin {
    * for automatic token refreshing.
    */
   destroy(): Promise<void>;
+
+  on: MongoDBOIDCPluginEventEmitter['on'];
+
+  off?: MongoDBOIDCPluginEventEmitter['off'];
 }
 
 /** @internal */
@@ -241,6 +255,8 @@ export function createMongoDBOIDCPlugin(
     logger: plugin.logger,
     serialize: plugin.serialize.bind(plugin),
     destroy: plugin.destroy.bind(plugin),
+    on: plugin.on.bind(plugin),
+    off: plugin.off?.bind(plugin),
   };
   publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.set(
     publicPlugin,

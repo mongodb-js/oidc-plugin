@@ -6,7 +6,10 @@ import type {
   IdPServerInfo,
   OIDCRequestFunction,
 } from './';
-import { createMongoDBOIDCPlugin, hookLoggerToMongoLogWriter } from './';
+import {
+  createMongoDBOIDCPlugin as _createMongoDBOIDCPlugin,
+  hookLoggerToMongoLogWriter,
+} from './';
 import { once } from 'events';
 import path from 'path';
 import { expect } from 'chai';
@@ -32,6 +35,17 @@ import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 import type { Server as HTTPServer } from 'http';
 import { createServer as createHTTPServer } from 'http';
 import type { AddressInfo } from 'net';
+
+let events: any[] = [];
+
+const createMongoDBOIDCPlugin: typeof _createMongoDBOIDCPlugin = (...args) => {
+  const plugin = _createMongoDBOIDCPlugin(...args);
+  plugin.on('token-error', (info) => events.push(['token-error', info]));
+  plugin.on('token-issued', (info) => events.push(['token-issued', info]));
+  plugin.on('token-expired', (info) => events.push(['token-expired', info]));
+  plugin.on('token-renewed', (info) => events.push(['token-renewed', info]));
+  return plugin;
+};
 
 // Shorthand to avoid having to specify `principalName` and `abortSignal`
 // if they aren't being used in the first place.
@@ -72,6 +86,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   let defaultOpts: MongoDBOIDCPluginOptions;
 
   beforeEach(async function () {
+    events = [];
     provider = await OIDCTestProvider.create();
     logger = new EventEmitter();
     const logStream = new PassThrough();
@@ -131,6 +146,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(accessTokenContents.client_id).to.equal(
         provider.getMongodbOIDCDBInfo().clientId
       );
+      expect(events).to.deep.eq([
+        ['token-issued', provider.getMongodbOIDCDBInfo()],
+      ]);
       verifySuccessfulAuthCodeFlowLog(await readLog());
     });
 
@@ -171,6 +189,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(getJWTContents(result1.accessToken).sub).to.equal(
         getJWTContents(result2.accessToken).sub
       );
+      expect(events).to.deep.eq([
+        ['token-issued', provider.getMongodbOIDCDBInfo()],
+        ['token-expired', provider.getMongodbOIDCDBInfo()],
+        ['token-renewed', provider.getMongodbOIDCDBInfo()],
+      ]);
       expect(await skipAuthAttemptEvent).to.deep.equal([
         { reason: 'refresh-succeeded' },
       ]);
@@ -489,7 +512,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       });
     });
 
-    it('can request tokens through the browser ', async function () {
+    it('can request tokens through the browser', async function () {
       const result = await requestToken(
         plugin,
         provider.getMongodbOIDCDBInfo()
