@@ -74,7 +74,7 @@
     "gen-esm-wrapper": "^1.1.0",
     "husky": "^8.0.3",
     "mocha": "^10.2.0",
-    "mongodb": "^5.4.0",
+    "mongodb": "^6.0.0",
     "mongodb-log-writer": "^1.1.5",
     "mongodb-runner": "^5.2.0",
     "node-fetch": "^3.3.1",
