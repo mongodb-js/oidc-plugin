@@ -26,7 +26,7 @@ import { AbortController, AbortSignal } from './util';
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
-import { automaticRefreshTimeoutMS } from './plugin';
+import { MongoDBOIDCPluginImpl, automaticRefreshTimeoutMS } from './plugin';
 import sinon from 'sinon';
 import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 import type { Server as HTTPServer } from 'http';
@@ -1011,6 +1011,96 @@ describe('OIDC plugin (local OIDC provider)', function () {
       });
       const result = await requestToken(plugin, metadata);
       validateToken(getJWTContents(result.accessToken));
+    });
+  });
+
+  describe('with stubbed oidc client', function () {
+    const sandbox = sinon.createSandbox();
+    const plugin = new MongoDBOIDCPluginImpl({});
+    const client = {
+      userinfo: sandbox.stub(),
+      introspect: sandbox.stub(),
+      revoke: sandbox.stub(),
+    };
+
+    plugin['getOIDCClient'] = (() => {
+      return { client };
+    }) as any;
+
+    plugin['getAuthState'] = (() => {
+      return {
+        currentTokenSet: {
+          set: {
+            access_token: '123',
+            refresh_token: 'abc',
+          },
+        },
+      };
+    }) as any;
+
+    afterEach(function () {
+      sandbox.resetHistory();
+    });
+
+    describe('plugin.userInfo', function () {
+      it('should call oidc-client userinfo method with token set', async function () {
+        await plugin.userInfo({} as any);
+        expect(client.userinfo).to.be.calledWith({
+          access_token: '123',
+          refresh_token: 'abc',
+        });
+      });
+
+      it('should throw if abort signal was aborted', async function () {
+        const controller = new AbortController();
+        controller.abort();
+        try {
+          await plugin.userInfo({} as any, { signal: controller.signal });
+          expect.fail('Expected userInfo to throw');
+        } catch (err) {
+          expect(err).to.have.property('message', 'This operation was aborted');
+        }
+      });
+    });
+
+    describe('plugin.introspect', function () {
+      it('should call oidc-client introspect method with access token', async function () {
+        await plugin.introspect({} as any);
+        expect(client.introspect).to.be.calledWith('123', 'access_token');
+      });
+
+      it('should throw if abort signal was aborted', async function () {
+        const controller = new AbortController();
+        controller.abort();
+        try {
+          await plugin.introspect({} as any, 'access_token', {
+            signal: controller.signal,
+          });
+          expect.fail('Expected introspect to throw');
+        } catch (err) {
+          expect(err).to.have.property('message', 'This operation was aborted');
+        }
+      });
+    });
+
+    describe('plugin.revoke', function () {
+      it('should call oidc-client revoke method with access token', async function () {
+        await plugin.revoke({} as any);
+        expect(client.revoke).to.be.calledWith('123', 'access_token');
+      });
+
+      it('should throw if abort signal was aborted', async function () {
+        const controller = new AbortController();
+        controller.abort();
+        try {
+          await plugin.revoke({} as any, 'access_token', {
+            signal: controller.signal,
+          });
+          expect.fail('Expected revoke to throw');
+        } catch (err) {
+          expect(err).to.have.property('message', 'This operation was aborted');
+        }
+      });
     });
   });
 });

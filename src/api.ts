@@ -4,12 +4,14 @@ import type {
 } from 'http';
 import { MongoDBOIDCPluginImpl } from './plugin';
 import type {
+  IdPServerInfo,
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
   OIDCRefreshFunction,
   OIDCRequestFunction,
   TypedEventEmitter,
 } from './types';
+import type { IntrospectionResponse, UserinfoResponse } from 'openid-client';
 
 /** @public */
 export type AuthFlowType = 'auth-code' | 'device-auth';
@@ -210,6 +212,41 @@ export interface MongoDBOIDCPlugin {
    * for automatic token refreshing.
    */
   destroy(): Promise<void>;
+
+  /**
+   * Retrieve userinfo for the current token set subject
+   *
+   * @see {@link https://openid.net/specs/openid-connect-core-1_0.html#UserInfo}
+   */
+  userInfo<
+    UserInfo extends Record<string, unknown> = Record<string, never>,
+    Address extends Record<string, unknown> = Record<string, never>
+  >(
+    serverMetadata: IdPServerInfo,
+    options?: { signal?: OIDCAbortSignal }
+  ): Promise<UserinfoResponse<UserInfo, Address>>;
+
+  /**
+   * Get introspection result for the token in the current token set
+   *
+   * @see {@link https://www.rfc-editor.org/rfc/rfc7662#section-2}
+   */
+  introspect(
+    serverMetadata: IdPServerInfo,
+    tokenTypeHint?: 'access_token' | 'refresh_token',
+    options?: { signal?: OIDCAbortSignal }
+  ): Promise<IntrospectionResponse>;
+
+  /**
+   * Revoke a token from the current token set
+   *
+   * @see {@link https://www.rfc-editor.org/rfc/rfc7009#section-2}
+   */
+  revoke(
+    serverMetadata: IdPServerInfo,
+    tokenTypeHint?: 'access_token' | 'refresh_token',
+    options?: { signal?: OIDCAbortSignal }
+  ): Promise<void>;
 }
 
 /** @internal */
@@ -241,6 +278,9 @@ export function createMongoDBOIDCPlugin(
     logger: plugin.logger,
     serialize: plugin.serialize.bind(plugin),
     destroy: plugin.destroy.bind(plugin),
+    userInfo: plugin.userInfo.bind(plugin),
+    introspect: plugin.introspect.bind(plugin),
+    revoke: plugin.revoke.bind(plugin),
   };
   publicPluginToInternalPluginMap_DoNotUseOutsideOfTests.set(
     publicPlugin,

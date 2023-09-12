@@ -17,7 +17,13 @@ import {
   withAbortCheck,
   withLock,
 } from './util';
-import type { Client, BaseClient, IdTokenClaims } from 'openid-client';
+import type {
+  Client,
+  BaseClient,
+  IdTokenClaims,
+  UserinfoResponse,
+  IntrospectionResponse,
+} from 'openid-client';
 import { TokenSet } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
@@ -337,6 +343,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
     const issuer = await Issuer.discover(serverMetadata.issuer);
+
     validateSecureHTTPUrl(
       issuer.metadata.authorization_endpoint,
       'authorization_endpoint'
@@ -817,5 +824,64 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       }
     }
     this.logger.emit('mongodb-oidc-plugin:destroyed');
+  }
+
+  public async userInfo<
+    UserInfo extends Record<string, unknown> = Record<string, never>,
+    Address extends Record<string, unknown> = Record<string, never>
+  >(
+    serverMetadata: IdPServerInfo,
+    options: { signal?: OIDCAbortSignal } = {}
+  ): Promise<UserinfoResponse<UserInfo, Address>> {
+    return await withAbortCheck(options.signal, async ({ signalPromise }) => {
+      return await Promise.race([
+        (async () => {
+          const authState = this.getAuthState(serverMetadata);
+          const { client } = await this.getOIDCClient(authState);
+          return await client.userinfo<UserInfo, Address>(
+            authState.currentTokenSet?.set ?? ({} as TokenSet)
+          );
+        })(),
+        signalPromise,
+      ]);
+    });
+  }
+
+  public async introspect(
+    serverMetadata: IdPServerInfo,
+    tokenTypeHint: 'access_token' | 'refresh_token' = 'access_token',
+    options: { signal?: OIDCAbortSignal } = {}
+  ): Promise<IntrospectionResponse> {
+    return await withAbortCheck(options.signal, async ({ signalPromise }) => {
+      return await Promise.race([
+        (async () => {
+          const authState = this.getAuthState(serverMetadata);
+          const { client } = await this.getOIDCClient(authState);
+          const currentTokenSet = authState.currentTokenSet?.set;
+          const token = currentTokenSet?.[tokenTypeHint] ?? '';
+          return await client.introspect(token, tokenTypeHint);
+        })(),
+        signalPromise,
+      ]);
+    });
+  }
+
+  public async revoke(
+    serverMetadata: IdPServerInfo,
+    tokenTypeHint: 'access_token' | 'refresh_token' = 'access_token',
+    options: { signal?: OIDCAbortSignal } = {}
+  ): Promise<void> {
+    return await withAbortCheck(options.signal, async ({ signalPromise }) => {
+      return await Promise.race([
+        (async () => {
+          const authState = this.getAuthState(serverMetadata);
+          const { client } = await this.getOIDCClient(authState);
+          const currentTokenSet = authState.currentTokenSet?.set;
+          const token = currentTokenSet?.[tokenTypeHint] ?? '';
+          return await client.revoke(token, tokenTypeHint);
+        })(),
+        signalPromise,
+      ]);
+    });
   }
 }
