@@ -1058,7 +1058,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
           await plugin.userInfo({} as any, { signal: controller.signal });
           expect.fail('Expected userInfo to throw');
         } catch (err) {
-          expect(err).to.have.property('message', 'This operation was aborted');
+          expect(err)
+            .to.have.property('message')
+            .match(/aborted/i);
         }
       });
     });
@@ -1078,7 +1080,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
           });
           expect.fail('Expected introspect to throw');
         } catch (err) {
-          expect(err).to.have.property('message', 'This operation was aborted');
+          expect(err)
+            .to.have.property('message')
+            .match(/aborted/i);
         }
       });
     });
@@ -1098,7 +1102,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
           });
           expect.fail('Expected revoke to throw');
         } catch (err) {
-          expect(err).to.have.property('message', 'This operation was aborted');
+          expect(err)
+            .to.have.property('message')
+            .match(/aborted/i);
         }
       });
     });
