@@ -433,28 +433,34 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // for client A, the token expires before it is requested again by client A,
     // then the plugin is passed to client B which requests a token, and we
     // receive mismatching tokens for different users or different audiences.
-    const idTokenClaims = tokenSet.claims();
-    if (state.lastIdTokenClaims) {
-      for (const claim of ['aud', 'sub'] as const) {
-        const normalize = (value: string | string[]): string => {
-          return JSON.stringify(
-            Array.isArray(value) ? [...value].sort() : value
-          );
-        };
-        const knownClaim = normalize(state.lastIdTokenClaims[claim]);
-        const newClaim = normalize(idTokenClaims[claim]);
+    if (tokenSet.id_token) {
+      const idTokenClaims = tokenSet.claims();
+      if (state.lastIdTokenClaims) {
+        for (const claim of ['aud', 'sub'] as const) {
+          const normalize = (value: string | string[]): string => {
+            return JSON.stringify(
+              Array.isArray(value) ? [...value].sort() : value
+            );
+          };
+          const knownClaim = normalize(state.lastIdTokenClaims[claim]);
+          const newClaim = normalize(idTokenClaims[claim]);
 
-        if (knownClaim !== newClaim) {
-          throw new MongoDBOIDCError(
-            `Unexpected '${claim}' field in id token: Expected ${knownClaim}, saw ${newClaim}`
-          );
+          if (knownClaim !== newClaim) {
+            throw new MongoDBOIDCError(
+              `Unexpected '${claim}' field in id token: Expected ${knownClaim}, saw ${newClaim}`
+            );
+          }
         }
       }
+      state.lastIdTokenClaims = {
+        aud: idTokenClaims.aud,
+        sub: idTokenClaims.sub,
+      };
+    } else if (state.lastIdTokenClaims) {
+      throw new MongoDBOIDCError(`Id token expected, but not found`);
+    } else {
+      this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
-    state.lastIdTokenClaims = {
-      aud: idTokenClaims.aud,
-      sub: idTokenClaims.sub,
-    };
 
     const timerDuration = automaticRefreshTimeoutMS(tokenSet);
     // Use `.call()` because in browsers, `setTimeout()` requires that it is called

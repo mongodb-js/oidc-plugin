@@ -260,4 +260,13 @@ export function hookLoggerToMongoLogWriter(
       'Destroyed OIDC plugin instance'
     );
   });
+
+  emitter.on('mongodb-oidc-plugin:missing-id-token', () => {
+    log.warn(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_022),
+      `${contextPrefix}-oidc`,
+      'Missing id token'
+    );
+  });
 }
