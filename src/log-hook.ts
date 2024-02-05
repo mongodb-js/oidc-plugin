@@ -266,7 +266,7 @@ export function hookLoggerToMongoLogWriter(
       'OIDC-PLUGIN',
       mongoLogId(1_002_000_022),
       `${contextPrefix}-oidc`,
-      'Missing id token'
+      'Missing ID token in IdP response'
     );
   });
 }
