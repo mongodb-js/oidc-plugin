@@ -11,6 +11,7 @@ import { createMongoDBOIDCPlugin } from './';
 import { OIDCMockProvider } from '@mongodb-js/oidc-mock-provider';
 import { MongoCluster } from 'mongodb-runner';
 import path from 'path';
+import sinon from 'sinon';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -219,6 +220,82 @@ describe('integration test with mongod', function () {
       const client = await MongoClient.connect(connectionString, {
         ...plugin.mongoClientOptions,
       });
+      try {
+        const status = await client
+          .db('admin')
+          .command({ connectionStatus: 1 });
+        expect(status).to.deep.equal({
+          ok: 1,
+          authInfo: {
+            authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
+            authenticatedUserRoles: [{ role: 'dev/testgroup', db: 'admin' }],
+          },
+        });
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
+  context('can authenticate with a mock IdP - without id_token', function () {
+    let provider: OIDCMockProvider;
+    let connectionString: string;
+
+    before(async function () {
+      if (+process.version.slice(1).split('.')[0] < 16) {
+        // JWK support for Node.js KeyObject.export() is only Node.js 16+
+        // but the OIDCMockProvider implementation needs it.
+        return this.skip();
+      }
+      provider = await OIDCMockProvider.create({
+        getTokenPayload() {
+          return {
+            expires_in: 3600,
+            payload: {
+              // Define the user information stored inside the access tokens
+              groups: ['testgroup'],
+              sub: 'testuser',
+              aud: 'resource-server-audience-value',
+            },
+            // id_token will not be included
+            skipIdToken: true,
+          };
+        },
+      });
+
+      const serverOidcConfig = [
+        {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: ['mongodbGroups'],
+          authorizationClaim: 'groups',
+          audience: 'resource-server-audience-value',
+          authNamePrefix: 'dev',
+        },
+      ];
+
+      cluster = await spawnMongod(serverOidcConfig);
+      connectionString = `mongodb://${cluster.hostport}/?authMechanism=MONGODB-OIDC`;
+    });
+
+    after(async function () {
+      await Promise.all([cluster?.close?.(), provider?.close?.()]);
+    });
+
+    it('can successfully authenticate with a fake Device Auth Flow - with a warning', async function () {
+      const { mongoClientOptions, logger } = createMongoDBOIDCPlugin({
+        notifyDeviceFlow: () => {},
+        allowedFlows: ['device-auth'],
+      });
+      const logEmitSpy = sinon.spy(logger, 'emit');
+      const client = await MongoClient.connect(connectionString, {
+        ...mongoClientOptions,
+      });
+      // without the id token, a warning will be logged
+      sinon.assert.calledWith(
+        logEmitSpy,
+        'mongodb-oidc-plugin:missing-id-token'
+      );
       try {
         const status = await client
           .db('admin')
