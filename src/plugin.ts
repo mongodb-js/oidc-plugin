@@ -457,7 +457,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         sub: idTokenClaims.sub,
       };
     } else if (state.lastIdTokenClaims) {
-      throw new MongoDBOIDCError(`Id token expected, but not found`);
+      throw new MongoDBOIDCError(
+        `ID token expected, but not found. Expected claims: ${JSON.stringify(
+          state.lastIdTokenClaims
+        )}`
+      );
     } else {
       this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
