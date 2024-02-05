@@ -121,6 +121,16 @@ describe('integration test with mongod', function () {
   context('can authenticate with a mock IdP', function () {
     let provider: OIDCMockProvider;
     let connectionString: string;
+    let getTokenPayload;
+    const tokenPayload = {
+      expires_in: 3600,
+      payload: {
+        // Define the user information stored inside the access tokens
+        groups: ['testgroup'],
+        sub: 'testuser',
+        aud: 'resource-server-audience-value',
+      },
+    };
 
     before(async function () {
       if (+process.version.slice(1).split('.')[0] < 16) {
@@ -129,16 +139,8 @@ describe('integration test with mongod', function () {
         return this.skip();
       }
       provider = await OIDCMockProvider.create({
-        getTokenPayload() {
-          return {
-            expires_in: 3600,
-            payload: {
-              // Define the user information stored inside the access tokens
-              groups: ['testgroup'],
-              sub: 'testuser',
-              aud: 'resource-server-audience-value',
-            },
-          };
+        getTokenPayload(metadata: Parameters<typeof getTokenPayload>[0]) {
+          return getTokenPayload(metadata);
         },
       });
 
@@ -159,6 +161,10 @@ describe('integration test with mongod', function () {
 
     after(async function () {
       await Promise.all([cluster?.close?.(), provider?.close?.()]);
+    });
+
+    beforeEach(function () {
+      getTokenPayload = () => tokenPayload;
     });
 
     it('can successfully authenticate with a fake Auth Code Flow', async function () {
@@ -235,54 +241,14 @@ describe('integration test with mongod', function () {
         await client.close();
       }
     });
-  });
 
-  context('can authenticate with a mock IdP - without id_token', function () {
-    let provider: OIDCMockProvider;
-    let connectionString: string;
-
-    before(async function () {
-      if (+process.version.slice(1).split('.')[0] < 16) {
-        // JWK support for Node.js KeyObject.export() is only Node.js 16+
-        // but the OIDCMockProvider implementation needs it.
-        return this.skip();
-      }
-      provider = await OIDCMockProvider.create({
-        getTokenPayload() {
-          return {
-            expires_in: 3600,
-            payload: {
-              // Define the user information stored inside the access tokens
-              groups: ['testgroup'],
-              sub: 'testuser',
-              aud: 'resource-server-audience-value',
-            },
-            // id_token will not be included
-            skipIdToken: true,
-          };
-        },
+    it('can successfully authenticate with a fake Device Auth Flow without an id_token - with a warning', async function () {
+      getTokenPayload = () => ({
+        ...tokenPayload,
+        // id_token will not be included
+        skipIdToken: true,
       });
 
-      const serverOidcConfig = [
-        {
-          issuer: provider.issuer,
-          clientId: 'mockclientid',
-          requestScopes: ['mongodbGroups'],
-          authorizationClaim: 'groups',
-          audience: 'resource-server-audience-value',
-          authNamePrefix: 'dev',
-        },
-      ];
-
-      cluster = await spawnMongod(serverOidcConfig);
-      connectionString = `mongodb://${cluster.hostport}/?authMechanism=MONGODB-OIDC`;
-    });
-
-    after(async function () {
-      await Promise.all([cluster?.close?.(), provider?.close?.()]);
-    });
-
-    it('can successfully authenticate with a fake Device Auth Flow - with a warning', async function () {
       const { mongoClientOptions, logger } = createMongoDBOIDCPlugin({
         notifyDeviceFlow: () => {},
         allowedFlows: ['device-auth'],
