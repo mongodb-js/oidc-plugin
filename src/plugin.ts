@@ -461,7 +461,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     if (tokenSet.id_token) {
       const idTokenClaims = tokenSet.claims();
-      if (state.lastIdTokenClaims) {
+      if (state.lastIdTokenClaims && !state.lastIdTokenClaims.noIdToken) {
         for (const claim of ['aud', 'sub'] as const) {
           const normalize = (value: string | string[]): string => {
             return JSON.stringify(
