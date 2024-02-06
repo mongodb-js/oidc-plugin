@@ -5,6 +5,10 @@ import {
   OIDCTestProvider,
   functioningAuthCodeBrowserFlow,
 } from '../test/oidc-test-provider';
+import type {
+  OIDCMockProviderConfig,
+  TokenMetadata,
+} from '@mongodb-js/oidc-mock-provider';
 import { MongoClient } from 'mongodb';
 import type { OpenBrowserOptions } from './';
 import { createMongoDBOIDCPlugin } from './';
@@ -121,7 +125,7 @@ describe('integration test with mongod', function () {
   context('can authenticate with a mock IdP', function () {
     let provider: OIDCMockProvider;
     let connectionString: string;
-    let getTokenPayload;
+    let getTokenPayload: OIDCMockProviderConfig['getTokenPayload'];
     const tokenPayload = {
       expires_in: 3600,
       payload: {
@@ -139,7 +143,7 @@ describe('integration test with mongod', function () {
         return this.skip();
       }
       provider = await OIDCMockProvider.create({
-        getTokenPayload(metadata: Parameters<typeof getTokenPayload>[0]) {
+        getTokenPayload(metadata: TokenMetadata) {
           return getTokenPayload(metadata);
         },
       });
