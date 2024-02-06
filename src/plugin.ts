@@ -55,6 +55,8 @@ interface UserOIDCAuthState {
   // The `sub` and `aud` claims in the ID token of the last-received
   // TokenSet, if any.
   lastIdTokenClaims?: Pick<IdTokenClaims, 'aud' | 'sub'>;
+  // No ID token was received previously
+  noIdTokenReceived?: boolean;
   // A cached Client instance that uses the issuer metadata as discovered
   // through serverOIDCMetadata.
   client?: Client;
@@ -201,13 +203,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       }
 
       for (const [key, serializedState] of original.state) {
-        const state = {
+        const state: UserOIDCAuthState = {
           serverOIDCMetadata: { ...serializedState.serverOIDCMetadata },
           currentAuthAttempt: null,
           currentTokenSet: null,
           lastIdTokenClaims: serializedState.lastIdTokenClaims
             ? { ...serializedState.lastIdTokenClaims }
             : undefined,
+          noIdTokenReceived: serializedState.noIdTokenReceived,
         };
         this.updateStateWithTokenSet(
           state,
@@ -243,6 +246,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }
                 : undefined,
+              noIdTokenReceived: state.noIdTokenReceived,
             },
           ] as const;
         }),
@@ -433,6 +437,19 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // for client A, the token expires before it is requested again by client A,
     // then the plugin is passed to client B which requests a token, and we
     // receive mismatching tokens for different users or different audiences.
+
+    if (!tokenSet.id_token && state.lastIdTokenClaims) {
+      throw new MongoDBOIDCError(
+        `ID token expected, but not found. Expected claims: ${JSON.stringify(
+          state.lastIdTokenClaims
+        )}`
+      );
+    }
+
+    if (tokenSet.id_token && state.noIdTokenReceived) {
+      throw new MongoDBOIDCError(`Unexpected ID token received.`);
+    }
+
     if (tokenSet.id_token) {
       const idTokenClaims = tokenSet.claims();
       if (state.lastIdTokenClaims) {
@@ -456,13 +473,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         aud: idTokenClaims.aud,
         sub: idTokenClaims.sub,
       };
-    } else if (state.lastIdTokenClaims) {
-      throw new MongoDBOIDCError(
-        `ID token expected, but not found. Expected claims: ${JSON.stringify(
-          state.lastIdTokenClaims
-        )}`
-      );
+      state.noIdTokenReceived = false;
     } else {
+      state.lastIdTokenClaims = undefined;
+      state.noIdTokenReceived = true;
       this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
 
