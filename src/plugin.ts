@@ -55,7 +55,8 @@ interface UserOIDCAuthState {
   // The `sub` and `aud` claims in the ID token of the last-received
   // TokenSet, if any.
   lastIdTokenClaims?: Pick<IdTokenClaims, 'aud' | 'sub'>;
-  // No ID token was received previously
+  // No ID token was received in the previous token set
+  // Disclaimer: This property is incompatible with lastIdTokenClaims
   noIdTokenReceived?: boolean;
   // A cached Client instance that uses the issuer metadata as discovered
   // through serverOIDCMetadata.
