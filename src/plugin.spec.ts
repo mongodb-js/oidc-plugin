@@ -311,7 +311,6 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
           'currentTokenSet',
           'lastIdTokenClaims',
-          'noIdTokenReceived',
           'serverOIDCMetadata',
         ]);
       });
