@@ -36,6 +36,14 @@ import { kDefaultOpenBrowserTimeout } from './api';
 import { spawn } from 'child_process';
 
 /** @internal */
+
+// The `sub` and `aud` claims in the ID token of the last-received
+// TokenSet, if any.
+// 'no-id-token' means that the previous token set contained no ID token
+type LastIdTokenClaims =
+  | (Pick<IdTokenClaims, 'aud' | 'sub'> & { noIdToken?: never })
+  | { noIdToken: true };
+
 interface UserOIDCAuthState {
   // The information that the driver forwarded to us from the server
   // about the OIDC Identity Provider config.
@@ -52,12 +60,7 @@ interface UserOIDCAuthState {
   // A timer attached to this state that automatically calls
   // currentTokenSet.tryRefresh() before the token expires.
   timer?: ReturnType<typeof setTimeout>;
-  // The `sub` and `aud` claims in the ID token of the last-received
-  // TokenSet, if any.
-  lastIdTokenClaims?: Pick<IdTokenClaims, 'aud' | 'sub'>;
-  // No ID token was received in the previous token set
-  // Disclaimer: This property is incompatible with lastIdTokenClaims
-  noIdTokenReceived?: boolean;
+  lastIdTokenClaims?: LastIdTokenClaims;
   // A cached Client instance that uses the issuer metadata as discovered
   // through serverOIDCMetadata.
   client?: Client;
@@ -211,7 +214,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           lastIdTokenClaims: serializedState.lastIdTokenClaims
             ? { ...serializedState.lastIdTokenClaims }
             : undefined,
-          noIdTokenReceived: serializedState.noIdTokenReceived,
         };
         this.updateStateWithTokenSet(
           state,
@@ -247,7 +249,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }
                 : undefined,
-              noIdTokenReceived: state.noIdTokenReceived,
             },
           ] as const;
         }),
@@ -438,8 +439,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // for client A, the token expires before it is requested again by client A,
     // then the plugin is passed to client B which requests a token, and we
     // receive mismatching tokens for different users or different audiences.
-
-    if (!tokenSet.id_token && state.lastIdTokenClaims) {
+    if (
+      !tokenSet.id_token &&
+      state.lastIdTokenClaims &&
+      !state.lastIdTokenClaims.noIdToken
+    ) {
       throw new MongoDBOIDCError(
         `ID token expected, but not found. Expected claims: ${JSON.stringify(
           state.lastIdTokenClaims
@@ -447,7 +451,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       );
     }
 
-    if (tokenSet.id_token && state.noIdTokenReceived) {
+    if (
+      tokenSet.id_token &&
+      state.lastIdTokenClaims &&
+      state.lastIdTokenClaims.noIdToken
+    ) {
       throw new MongoDBOIDCError(`Unexpected ID token received.`);
     }
 
@@ -474,10 +482,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         aud: idTokenClaims.aud,
         sub: idTokenClaims.sub,
       };
-      state.noIdTokenReceived = false;
     } else {
-      state.lastIdTokenClaims = undefined;
-      state.noIdTokenReceived = true;
+      state.lastIdTokenClaims = { noIdToken: true };
       this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
 
