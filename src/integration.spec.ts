@@ -5,12 +5,17 @@ import {
   OIDCTestProvider,
   functioningAuthCodeBrowserFlow,
 } from '../test/oidc-test-provider';
+import type {
+  OIDCMockProviderConfig,
+  TokenMetadata,
+} from '@mongodb-js/oidc-mock-provider';
 import { MongoClient } from 'mongodb';
 import type { OpenBrowserOptions } from './';
 import { createMongoDBOIDCPlugin } from './';
 import { OIDCMockProvider } from '@mongodb-js/oidc-mock-provider';
 import { MongoCluster } from 'mongodb-runner';
 import path from 'path';
+import sinon from 'sinon';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -120,6 +125,16 @@ describe('integration test with mongod', function () {
   context('can authenticate with a mock IdP', function () {
     let provider: OIDCMockProvider;
     let connectionString: string;
+    let getTokenPayload: OIDCMockProviderConfig['getTokenPayload'];
+    const tokenPayload = {
+      expires_in: 3600,
+      payload: {
+        // Define the user information stored inside the access tokens
+        groups: ['testgroup'],
+        sub: 'testuser',
+        aud: 'resource-server-audience-value',
+      },
+    };
 
     before(async function () {
       if (+process.version.slice(1).split('.')[0] < 16) {
@@ -128,16 +143,8 @@ describe('integration test with mongod', function () {
         return this.skip();
       }
       provider = await OIDCMockProvider.create({
-        getTokenPayload() {
-          return {
-            expires_in: 3600,
-            payload: {
-              // Define the user information stored inside the access tokens
-              groups: ['testgroup'],
-              sub: 'testuser',
-              aud: 'resource-server-audience-value',
-            },
-          };
+        getTokenPayload(metadata: TokenMetadata) {
+          return getTokenPayload(metadata);
         },
       });
 
@@ -158,6 +165,10 @@ describe('integration test with mongod', function () {
 
     after(async function () {
       await Promise.all([cluster?.close?.(), provider?.close?.()]);
+    });
+
+    beforeEach(function () {
+      getTokenPayload = () => tokenPayload;
     });
 
     it('can successfully authenticate with a fake Auth Code Flow', async function () {
@@ -219,6 +230,42 @@ describe('integration test with mongod', function () {
       const client = await MongoClient.connect(connectionString, {
         ...plugin.mongoClientOptions,
       });
+      try {
+        const status = await client
+          .db('admin')
+          .command({ connectionStatus: 1 });
+        expect(status).to.deep.equal({
+          ok: 1,
+          authInfo: {
+            authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
+            authenticatedUserRoles: [{ role: 'dev/testgroup', db: 'admin' }],
+          },
+        });
+      } finally {
+        await client.close();
+      }
+    });
+
+    it('can successfully authenticate with a fake Device Auth Flow without an id_token - with a warning', async function () {
+      getTokenPayload = () => ({
+        ...tokenPayload,
+        // id_token will not be included
+        skipIdToken: true,
+      });
+
+      const { mongoClientOptions, logger } = createMongoDBOIDCPlugin({
+        notifyDeviceFlow: () => {},
+        allowedFlows: ['device-auth'],
+      });
+      const logEmitSpy = sinon.spy(logger, 'emit');
+      const client = await MongoClient.connect(connectionString, {
+        ...mongoClientOptions,
+      });
+      // without the id token, a warning will be logged
+      sinon.assert.calledWith(
+        logEmitSpy,
+        'mongodb-oidc-plugin:missing-id-token'
+      );
       try {
         const status = await client
           .db('admin')
