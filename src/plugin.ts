@@ -22,7 +22,8 @@ import { TokenSet } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
 import { promisify } from 'util';
-import { randomBytes } from 'crypto';
+import type { KeyObject } from 'crypto';
+import { generateKeyPair, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 import type {
   AuthFlowType,
@@ -167,6 +168,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     clearTimeout: typeof clearTimeout;
   };
   private destroyed = false;
+  private dpopKey: KeyObject | null = null;
 
   constructor(options: Readonly<MongoDBOIDCPluginOptions>) {
     this.options = options;
@@ -262,6 +264,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return Promise.resolve(
       Buffer.from(JSON.stringify(this._serialize()), 'utf8').toString('base64')
     );
+  }
+
+  private async getDPoPOptions(): Promise<{ DPoP: KeyObject }> {
+    if (!this.dpopKey) {
+      this.dpopKey = (
+        await promisify(generateKeyPair)('rsa', { modulusLength: 4096 })
+      ).privateKey;
+    }
+    return { DPoP: this.dpopKey };
   }
 
   // Is this flow supported and allowed?
@@ -511,7 +522,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         this.logger.emit('mongodb-oidc-plugin:refresh-started');
 
         const { client } = await this.getOIDCClient(state);
-        const refreshedTokens = await client.refresh(tokenSet);
+        const refreshedTokens = await client.refresh(tokenSet, {
+          ...(await this.getDPoPOptions()),
+        });
         // Check again to avoid race conditions.
         if (state.currentTokenSet?.set === tokenSet) {
           this.logger.emit('mongodb-oidc-plugin:refresh-succeeded');
@@ -656,10 +669,17 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     const params = client.callbackParams(paramsUrl);
-    const tokenSet = await client.callback(actualRedirectURI, params, {
-      code_verifier: codeVerifier,
-      state: oidcStateParam,
-    });
+    const tokenSet = await client.callback(
+      actualRedirectURI,
+      params,
+      {
+        code_verifier: codeVerifier,
+        state: oidcStateParam,
+      },
+      {
+        ...(await this.getDPoPOptions()),
+      }
+    );
     this.updateStateWithTokenSet(state, tokenSet);
   }
 
@@ -671,10 +691,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
       const deviceFlowHandle = await Promise.race([
-        client.deviceAuthorization({
-          client_id: client.metadata.client_id,
-          scope,
-        }),
+        client.deviceAuthorization(
+          {
+            client_id: client.metadata.client_id,
+            scope,
+          },
+          { ...(await this.getDPoPOptions()) }
+        ),
         signalPromise,
       ]);
 
