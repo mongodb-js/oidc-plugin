@@ -35,6 +35,7 @@ import type {
 } from './api';
 import { kDefaultOpenBrowserTimeout } from './api';
 import { spawn } from 'child_process';
+import { calculateJwkThumbprint } from 'jose';
 
 /** @internal */
 
@@ -168,7 +169,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     clearTimeout: typeof clearTimeout;
   };
   private destroyed = false;
-  private dpopKey: KeyObject | null = null;
+  private dpop: { key: KeyObject; jkt: string } | null = null;
 
   constructor(options: Readonly<MongoDBOIDCPluginOptions>) {
     this.options = options;
@@ -266,13 +267,21 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     );
   }
 
-  private async getDPoPOptions(): Promise<{ DPoP: KeyObject }> {
-    if (!this.dpopKey) {
-      this.dpopKey = (
-        await promisify(generateKeyPair)('rsa', { modulusLength: 4096 })
-      ).privateKey;
+  private async getDPoPOptions(): Promise<{
+    DPoP: KeyObject;
+    dpop_jkt: string;
+  }> {
+    if (!this.dpop) {
+      const { privateKey, publicKey } = await promisify(generateKeyPair)(
+        'rsa',
+        { modulusLength: 4096 }
+      );
+      this.dpop = {
+        key: privateKey,
+        jkt: await calculateJwkThumbprint(publicKey.export({ format: 'jwk' })),
+      };
     }
-    return { DPoP: this.dpopKey };
+    return { DPoP: this.dpop.key, dpop_jkt: this.dpop.jkt };
   }
 
   // Is this flow supported and allowed?
@@ -595,6 +604,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           code_challenge: codeChallenge,
           code_challenge_method: 'S256',
           state: oidcStateParam,
+          dpop_jkt: (await this.getDPoPOptions()).dpop_jkt,
         });
         validateSecureHTTPUrl(authCodeFlowUrl, 'authCodeFlowUrl');
         const { localUrl, onAccessed: onLocalUrlAccessed } =
