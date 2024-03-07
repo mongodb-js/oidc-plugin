@@ -827,6 +827,20 @@ describe('OIDC plugin (local OIDC provider)', function () {
       }
     });
 
+    it('includes a helpful error message when attempting to reach out to invalid issuer', async function () {
+      try {
+        await requestToken(plugin, {
+          clientId: 'clientId',
+          issuer: 'https://doesnotexist.mongodb.com/',
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.include(
+          'Unable to fetch issuer metadata for "https://doesnotexist.mongodb.com/":'
+        );
+      }
+    });
+
     context('with an issuer that reports custom metadata', function () {
       let server: HTTPServer;
       let response: Record<string, unknown>;

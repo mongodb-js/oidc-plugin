@@ -139,8 +139,9 @@ export class MongoDBOIDCError extends Error {
   /** @internal */
   private [MongoDBOIDCErrorTag] = true;
 
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, { cause }: { cause?: unknown } = {}) {
+    // @ts-expect-error `cause` is not supported in Node.js 14
+    super(message, { cause });
   }
 
   static isMongoDBOIDCError(value: unknown): value is MongoDBOIDCError {

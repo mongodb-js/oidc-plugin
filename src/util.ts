@@ -118,3 +118,14 @@ export function validateSecureHTTPUrl(
     throw err;
   }
 }
+
+export function messageFromError(err: unknown): string {
+  return String(
+    err &&
+      typeof err === 'object' &&
+      'message' in err &&
+      typeof err.message === 'string'
+      ? err.message
+      : err
+  );
+}

@@ -10,6 +10,7 @@ import { MongoDBOIDCError } from './types';
 import {
   AbortController,
   errorString,
+  messageFromError,
   normalizeObject,
   throwIfAborted,
   timeoutSignal,
@@ -342,7 +343,21 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
-    const issuer = await Issuer.discover(serverMetadata.issuer);
+    let issuer: Issuer;
+    try {
+      issuer = await Issuer.discover(serverMetadata.issuer);
+    } catch (err: unknown) {
+      // openid-client just forwards the raw Node.js HTTP error, we'll want to
+      // at least include the target URL here
+      throw new MongoDBOIDCError(
+        `Unable to fetch issuer metadata for ${JSON.stringify(
+          serverMetadata.issuer
+        )}: ${messageFromError(err)}`,
+        {
+          cause: err,
+        }
+      );
+    }
     validateSecureHTTPUrl(
       issuer.metadata.authorization_endpoint,
       'authorization_endpoint'
@@ -603,11 +618,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
                 browserHandle?.once('error', (err) =>
                   reject(
                     new MongoDBOIDCError(
-                      `Opening browser failed with '${String(
-                        err && typeof err === 'object' && 'message' in err
-                          ? err.message
-                          : err
-                      )}'${extraErrorInfo()}`
+                      `Opening browser failed with '${messageFromError(
+                        err
+                      )}'${extraErrorInfo()}`,
+                      { cause: err }
                     )
                   )
                 );
