@@ -775,6 +775,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
+      tokenType: state.currentTokenSet.set.token_type ?? null, // DPoP or Bearer
       hasRefreshToken: !!state.currentTokenSet.set.refresh_token,
       expiresAt: state.currentTokenSet.set.expires_at
         ? new Date(state.currentTokenSet.set.expires_at * 1000).toISOString()
