@@ -312,6 +312,19 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return newState;
   }
 
+  private getSupportedDefaultScopes(issuer: Issuer): string[] {
+    return ['openid', 'offline_access'].filter((scope) => {
+      // Only add `openid` / `offline_access` if the IdP announces support
+      // for those scopes, or if the IdP does not provide a list of scopes
+      // and we cannot tell which it supports.
+      // https://jira.mongodb.org/browser/COMPASS-7437
+      return (
+        !Array.isArray(issuer.metadata.scopes_supported) ||
+        issuer.metadata.scopes_supported.includes(scope)
+      );
+    });
+  }
+
   private async getOIDCClient(
     state: UserOIDCAuthState,
     redirectURIs?: string[]
@@ -321,17 +334,18 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     client: BaseClient;
   }> {
     const serverMetadata = state.serverOIDCMetadata;
-    const scope = [
-      ...new Set([
-        'openid',
-        'offline_access',
-        ...(serverMetadata.requestScopes ?? []),
-      ]),
-    ].join(' ');
+
+    const makeScope = (issuer: Issuer) =>
+      [
+        ...new Set([
+          ...this.getSupportedDefaultScopes(issuer),
+          ...(serverMetadata.requestScopes ?? []),
+        ]),
+      ].join(' ');
 
     if (state.client) {
       return {
-        scope,
+        scope: makeScope(state.client.issuer),
         issuer: state.client.issuer,
         // need to re-create Client here because redirect_uris might
         // differ between calls to this method
@@ -377,7 +391,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state.client = client;
 
     return {
-      scope,
+      scope: makeScope(issuer),
       issuer,
       client,
     };

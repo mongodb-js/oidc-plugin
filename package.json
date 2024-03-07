@@ -57,7 +57,7 @@
     "@mongodb-js/eslint-config-devtools": "^0.9.9",
     "@mongodb-js/mocha-config-devtools": "^1.0.0",
     "@mongodb-js/monorepo-tools": "^1.1.4",
-    "@mongodb-js/oidc-mock-provider": "^0.7.1",
+    "@mongodb-js/oidc-mock-provider": "^0.8.0",
     "@mongodb-js/prettier-config-devtools": "^1.0.1",
     "@mongodb-js/tsconfig-devtools": "^1.0.0",
     "@types/chai": "^4.2.21",
