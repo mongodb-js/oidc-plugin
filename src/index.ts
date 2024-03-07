@@ -9,6 +9,7 @@ export type {
   RedirectServerRequestHandler,
   RedirectServerRequestInfo,
   MongoDBOIDCPluginMongoClientOptions,
+  HttpOptions,
 } from './api';
 
 export type {

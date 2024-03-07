@@ -76,6 +76,15 @@ export class RFC8252HTTPServer {
     this.expressApp.use(express.urlencoded({ extended: false }));
     this.expressApp.use(express.json());
     this.expressApp.use((req, res, next) => {
+      let url = req.url;
+      if (this.listeningRedirectUrl) {
+        try {
+          url = new URL(req.url, this.listeningRedirectUrl).toString();
+        } catch {
+          // should never really get to this point, but this is only for debugging
+        }
+      }
+      this.logger.emit('mongodb-oidc-plugin:inbound-http-request', { url });
       // Set some default HTTP security headers. The CSP here is fairly strict,
       // but specific handlers can override these as necessary.
       res.setHeader('Content-Security-Policy', "default-src 'self'");

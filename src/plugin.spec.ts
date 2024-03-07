@@ -1054,6 +1054,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
   let provider: OIDCMockProvider;
   let getTokenPayload: OIDCMockProviderConfig['getTokenPayload'];
   let additionalIssuerMetadata: OIDCMockProviderConfig['additionalIssuerMetadata'];
+  let receivedHttpRequests: string[] = [];
   const tokenPayload = {
     expires_in: 3600,
     payload: {
@@ -1077,6 +1078,9 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       additionalIssuerMetadata() {
         return additionalIssuerMetadata?.() ?? {};
       },
+      overrideRequestHandler(url: string) {
+        receivedHttpRequests.push(url);
+      },
     });
   });
 
@@ -1085,6 +1089,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
   });
 
   beforeEach(function () {
+    receivedHttpRequests = [];
     getTokenPayload = () => tokenPayload;
     additionalIssuerMetadata = undefined;
   });
@@ -1118,6 +1123,62 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     it('will omit built-in scopes if the IdP does not announce support for them', async function () {
       additionalIssuerMetadata = () => ({ scopes_supported: ['openid'] });
       expect(await getScopes()).to.deep.equal(['openid']);
+    });
+  });
+
+  context('HTTP request tracking', function () {
+    it('will log all outgoing HTTP requests', async function () {
+      const pluginHttpRequests: string[] = [];
+      const localServerHttpRequests: string[] = [];
+      const browserHttpRequests: string[] = [];
+
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: async ({ url }) => {
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            browserHttpRequests.push(url);
+            const response = await fetch(url, { redirect: 'manual' });
+            response.body?.resume();
+            const redirectTarget =
+              response.status >= 300 &&
+              response.status < 400 &&
+              response.headers.get('location');
+            if (redirectTarget)
+              url = new URL(redirectTarget, response.url).href;
+            else break;
+          }
+        },
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+      plugin.logger.on('mongodb-oidc-plugin:outbound-http-request', (ev) =>
+        pluginHttpRequests.push(ev.url)
+      );
+      plugin.logger.on('mongodb-oidc-plugin:inbound-http-request', (ev) =>
+        localServerHttpRequests.push(ev.url)
+      );
+      await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+
+      const removeSearchParams = (str: string) =>
+        Object.assign(new URL(str), { search: '' }).toString();
+      const allOutboundRequests = [
+        ...pluginHttpRequests,
+        ...browserHttpRequests,
+      ]
+        .map(removeSearchParams)
+        .sort();
+      const allInboundRequests = [
+        ...localServerHttpRequests,
+        ...receivedHttpRequests,
+      ]
+        .map(removeSearchParams)
+        .sort();
+      expect(allOutboundRequests).to.deep.equal(allInboundRequests);
     });
   });
 });

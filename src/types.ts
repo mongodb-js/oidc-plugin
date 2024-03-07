@@ -48,6 +48,8 @@ export interface MongoDBOIDCLogEventsMap {
   }) => void;
   'mongodb-oidc-plugin:destroyed': () => void;
   'mongodb-oidc-plugin:missing-id-token': () => void;
+  'mongodb-oidc-plugin:outbound-http-request': (event: { url: string }) => void;
+  'mongodb-oidc-plugin:inbound-http-request': (event: { url: string }) => void;
 }
 
 /** @public */

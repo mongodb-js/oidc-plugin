@@ -18,8 +18,13 @@ import {
   withAbortCheck,
   withLock,
 } from './util';
-import type { Client, BaseClient, IdTokenClaims } from 'openid-client';
-import { TokenSet } from 'openid-client';
+import type {
+  Client,
+  IdTokenClaims,
+  CustomHttpOptionsProvider,
+} from 'openid-client';
+import type { BaseClient } from 'openid-client';
+import { TokenSet, custom } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
 import { promisify } from 'util';
@@ -325,6 +330,46 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     });
   }
 
+  // prettier does not understand the return type syntax, TS does
+  private getIssuerClass() /*: typeof Issuer<BaseClient>*/ {
+    const oidcPluginCustomHttpOptionsProvider: CustomHttpOptionsProvider = (
+      urlObject,
+      options
+    ) => {
+      const url = urlObject.toString();
+      this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
+      validateSecureHTTPUrl(url, '<generic>');
+      const { customHttpOptions } = this.options;
+      if (customHttpOptions && typeof customHttpOptions === 'object')
+        return customHttpOptions;
+      else return customHttpOptions?.(url, options) ?? {};
+    };
+
+    class CustomIssuer extends Issuer<BaseClient> {
+      [custom.http_options]: CustomHttpOptionsProvider =
+        oidcPluginCustomHttpOptionsProvider;
+      static [custom.http_options]: CustomHttpOptionsProvider =
+        oidcPluginCustomHttpOptionsProvider;
+
+      constructor(...params: ConstructorParameters<typeof Issuer>) {
+        super(...params);
+        this.Client[custom.http_options] = oidcPluginCustomHttpOptionsProvider;
+        this.Client.prototype[custom.http_options] =
+          oidcPluginCustomHttpOptionsProvider;
+      }
+
+      static async discover(issuer: string): Promise<CustomIssuer> {
+        return new this((await super.discover(issuer)).metadata);
+      }
+
+      static async webfinger(input: string): Promise<CustomIssuer> {
+        return new this((await super.discover(input)).metadata);
+      }
+    }
+
+    return CustomIssuer;
+  }
+
   private async getOIDCClient(
     state: UserOIDCAuthState,
     redirectURIs?: string[]
@@ -359,7 +404,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
     let issuer: Issuer;
     try {
-      issuer = await Issuer.discover(serverMetadata.issuer);
+      issuer = await this.getIssuerClass().discover(serverMetadata.issuer);
     } catch (err: unknown) {
       // openid-client just forwards the raw Node.js HTTP error, we'll want to
       // at least include the target URL here
