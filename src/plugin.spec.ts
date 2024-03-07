@@ -308,6 +308,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(serializedData.oidcPluginStateVersion).to.equal(0);
         expect(serializedData.state).to.have.lengthOf(1);
         expect(serializedData.state[0][0]).to.be.a('string');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
           'currentTokenSet',
           'lastIdTokenClaims',
