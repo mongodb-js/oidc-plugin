@@ -10,6 +10,24 @@ import type {
   OIDCRequestFunction,
   TypedEventEmitter,
 } from './types';
+import type { RequestOptions } from 'https';
+
+/** @public */
+export type HttpOptions = Partial<
+  Pick<
+    RequestOptions,
+    | 'agent'
+    | 'ca'
+    | 'cert'
+    | 'crl'
+    | 'headers'
+    | 'key'
+    | 'lookup'
+    | 'passphrase'
+    | 'pfx'
+    | 'timeout'
+  >
+>;
 
 /** @public */
 export type AuthFlowType = 'auth-code' | 'device-auth';
@@ -167,6 +185,13 @@ export interface MongoDBOIDCPluginOptions {
    * message being emitted but otherwise be ignored.
    */
   throwOnIncompatibleSerializedState?: boolean;
+
+  /**
+   * Provide custom HTTP options for individual HTTP calls.
+   */
+  customHttpOptions?:
+    | HttpOptions
+    | ((url: string, options: Readonly<HttpOptions>) => HttpOptions);
 }
 
 /** @public */

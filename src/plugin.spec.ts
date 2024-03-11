@@ -5,6 +5,7 @@ import type {
   OIDCCallbackContext,
   IdPServerInfo,
   OIDCRequestFunction,
+  OpenBrowserOptions,
 } from './';
 import { createMongoDBOIDCPlugin, hookLoggerToMongoLogWriter } from './';
 import { once } from 'events';
@@ -32,6 +33,24 @@ import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 import type { Server as HTTPServer } from 'http';
 import { createServer as createHTTPServer } from 'http';
 import type { AddressInfo } from 'net';
+import type {
+  OIDCMockProviderConfig,
+  TokenMetadata,
+} from '@mongodb-js/oidc-mock-provider';
+import { OIDCMockProvider } from '@mongodb-js/oidc-mock-provider';
+
+// node-fetch@3 is ESM-only...
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+const fetch: typeof import('node-fetch').default = (...args) =>
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  eval("import('node-fetch')").then((fetch: typeof import('node-fetch')) =>
+    fetch.default(...args)
+  );
+
+// A 'browser' implementation that just does HTTP requests and ignores the response.
+async function fetchBrowser({ url }: OpenBrowserOptions): Promise<void> {
+  (await fetch(url)).body?.resume();
+}
 
 // Shorthand to avoid having to specify `principalName` and `abortSignal`
 // if they aren't being used in the first place.
@@ -308,6 +327,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(serializedData.oidcPluginStateVersion).to.equal(0);
         expect(serializedData.state).to.have.lengthOf(1);
         expect(serializedData.state[0][0]).to.be.a('string');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
           'currentTokenSet',
           'lastIdTokenClaims',
@@ -827,6 +847,20 @@ describe('OIDC plugin (local OIDC provider)', function () {
       }
     });
 
+    it('includes a helpful error message when attempting to reach out to invalid issuer', async function () {
+      try {
+        await requestToken(plugin, {
+          clientId: 'clientId',
+          issuer: 'https://doesnotexist.mongodb.com/',
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.include(
+          'Unable to fetch issuer metadata for "https://doesnotexist.mongodb.com/":'
+        );
+      }
+    });
+
     context('with an issuer that reports custom metadata', function () {
       let server: HTTPServer;
       let response: Record<string, unknown>;
@@ -1011,6 +1045,140 @@ describe('OIDC plugin (local OIDC provider)', function () {
       });
       const result = await requestToken(plugin, metadata);
       validateToken(getJWTContents(result.accessToken));
+    });
+  });
+});
+
+// eslint-disable-next-line mocha/max-top-level-suites
+describe('OIDC plugin (mock OIDC provider)', function () {
+  let provider: OIDCMockProvider;
+  let getTokenPayload: OIDCMockProviderConfig['getTokenPayload'];
+  let additionalIssuerMetadata: OIDCMockProviderConfig['additionalIssuerMetadata'];
+  let receivedHttpRequests: string[] = [];
+  const tokenPayload = {
+    expires_in: 3600,
+    payload: {
+      // Define the user information stored inside the access tokens
+      groups: ['testgroup'],
+      sub: 'testuser',
+      aud: 'resource-server-audience-value',
+    },
+  };
+
+  before(async function () {
+    if (+process.version.slice(1).split('.')[0] < 16) {
+      // JWK support for Node.js KeyObject.export() is only Node.js 16+
+      // but the OIDCMockProvider implementation needs it.
+      return this.skip();
+    }
+    provider = await OIDCMockProvider.create({
+      getTokenPayload(metadata: TokenMetadata) {
+        return getTokenPayload(metadata);
+      },
+      additionalIssuerMetadata() {
+        return additionalIssuerMetadata?.() ?? {};
+      },
+      overrideRequestHandler(url: string) {
+        receivedHttpRequests.push(url);
+      },
+    });
+  });
+
+  after(async function () {
+    await provider?.close?.();
+  });
+
+  beforeEach(function () {
+    receivedHttpRequests = [];
+    getTokenPayload = () => tokenPayload;
+    additionalIssuerMetadata = undefined;
+  });
+
+  context('with different supported built-in scopes', function () {
+    let getScopes: () => Promise<string[]>;
+
+    beforeEach(function () {
+      getScopes = async function () {
+        const plugin = createMongoDBOIDCPlugin({
+          openBrowserTimeout: 60_000,
+          openBrowser: fetchBrowser,
+          allowedFlows: ['auth-code'],
+          redirectURI: 'http://localhost:0/callback',
+        });
+        const result = await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        const accessTokenContents = getJWTContents(result.accessToken);
+        return String(accessTokenContents.scope).split(' ').sort();
+      };
+    });
+
+    it('will get a list of built-in OpenID scopes by default', async function () {
+      additionalIssuerMetadata = undefined;
+      expect(await getScopes()).to.deep.equal(['offline_access', 'openid']);
+    });
+
+    it('will omit built-in scopes if the IdP does not announce support for them', async function () {
+      additionalIssuerMetadata = () => ({ scopes_supported: ['openid'] });
+      expect(await getScopes()).to.deep.equal(['openid']);
+    });
+  });
+
+  context('HTTP request tracking', function () {
+    it('will log all outgoing HTTP requests', async function () {
+      const pluginHttpRequests: string[] = [];
+      const localServerHttpRequests: string[] = [];
+      const browserHttpRequests: string[] = [];
+
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: async ({ url }) => {
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            browserHttpRequests.push(url);
+            const response = await fetch(url, { redirect: 'manual' });
+            response.body?.resume();
+            const redirectTarget =
+              response.status >= 300 &&
+              response.status < 400 &&
+              response.headers.get('location');
+            if (redirectTarget)
+              url = new URL(redirectTarget, response.url).href;
+            else break;
+          }
+        },
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+      plugin.logger.on('mongodb-oidc-plugin:outbound-http-request', (ev) =>
+        pluginHttpRequests.push(ev.url)
+      );
+      plugin.logger.on('mongodb-oidc-plugin:inbound-http-request', (ev) =>
+        localServerHttpRequests.push(ev.url)
+      );
+      await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+
+      const removeSearchParams = (str: string) =>
+        Object.assign(new URL(str), { search: '' }).toString();
+      const allOutboundRequests = [
+        ...pluginHttpRequests,
+        ...browserHttpRequests,
+      ]
+        .map(removeSearchParams)
+        .sort();
+      const allInboundRequests = [
+        ...localServerHttpRequests,
+        ...receivedHttpRequests,
+      ]
+        .map(removeSearchParams)
+        .sort();
+      expect(allOutboundRequests).to.deep.equal(allInboundRequests);
     });
   });
 });

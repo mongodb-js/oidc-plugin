@@ -42,11 +42,14 @@ export interface MongoDBOIDCLogEventsMap {
   'mongodb-oidc-plugin:skip-auth-attempt': (event: { reason: string }) => void;
   'mongodb-oidc-plugin:auth-failed': (event: { error: string }) => void;
   'mongodb-oidc-plugin:auth-succeeded': (event: {
+    tokenType: string | null;
     hasRefreshToken: boolean;
     expiresAt: string | null;
   }) => void;
   'mongodb-oidc-plugin:destroyed': () => void;
   'mongodb-oidc-plugin:missing-id-token': () => void;
+  'mongodb-oidc-plugin:outbound-http-request': (event: { url: string }) => void;
+  'mongodb-oidc-plugin:inbound-http-request': (event: { url: string }) => void;
 }
 
 /** @public */
@@ -138,8 +141,9 @@ export class MongoDBOIDCError extends Error {
   /** @internal */
   private [MongoDBOIDCErrorTag] = true;
 
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, { cause }: { cause?: unknown } = {}) {
+    // @ts-expect-error `cause` is not supported in Node.js 14
+    super(message, { cause });
   }
 
   static isMongoDBOIDCError(value: unknown): value is MongoDBOIDCError {

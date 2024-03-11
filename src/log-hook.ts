@@ -2,6 +2,14 @@ import type { MongoDBOIDCLogEventsMap, TypedEventEmitter } from './types';
 
 /** @public */
 export interface MongoLogWriter {
+  debug?(
+    c: string,
+    id: unknown,
+    ctx: string,
+    msg: string,
+    attr?: unknown,
+    level?: 1 | 2 | 3 | 4 | 5
+  ): void;
   info(c: string, id: unknown, ctx: string, msg: string, attr?: unknown): void;
   warn(c: string, id: unknown, ctx: string, msg: string, attr?: unknown): void;
   error(c: string, id: unknown, ctx: string, msg: string, attr?: unknown): void;
@@ -269,4 +277,36 @@ export function hookLoggerToMongoLogWriter(
       'Missing ID token in IdP response'
     );
   });
+
+  emitter.on('mongodb-oidc-plugin:outbound-http-request', (ev) => {
+    log.debug?.(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_023),
+      `${contextPrefix}-oidc`,
+      'Outbound HTTP request',
+      { url: redactUrl(ev.url) }
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:inbound-http-request', (ev) => {
+    log.debug?.(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_024),
+      `${contextPrefix}-oidc`,
+      'Inbound HTTP request',
+      { url: redactUrl(ev.url) }
+    );
+  });
+}
+
+function redactUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return '<Invalid URL>';
+  }
+  for (const key of [...parsed.searchParams.keys()])
+    parsed.searchParams.set(key, '');
+  return parsed.toString();
 }

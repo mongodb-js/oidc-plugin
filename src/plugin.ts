@@ -10,6 +10,7 @@ import { MongoDBOIDCError } from './types';
 import {
   AbortController,
   errorString,
+  messageFromError,
   normalizeObject,
   throwIfAborted,
   timeoutSignal,
@@ -17,8 +18,13 @@ import {
   withAbortCheck,
   withLock,
 } from './util';
-import type { Client, BaseClient, IdTokenClaims } from 'openid-client';
-import { TokenSet } from 'openid-client';
+import type {
+  Client,
+  IdTokenClaims,
+  CustomHttpOptionsProvider,
+} from 'openid-client';
+import type { BaseClient } from 'openid-client';
+import { TokenSet, custom } from 'openid-client';
 import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
 import { promisify } from 'util';
@@ -311,6 +317,59 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return newState;
   }
 
+  private getSupportedDefaultScopes(issuer: Issuer): string[] {
+    return ['openid', 'offline_access'].filter((scope) => {
+      // Only add `openid` / `offline_access` if the IdP announces support
+      // for those scopes, or if the IdP does not provide a list of scopes
+      // and we cannot tell which it supports.
+      // https://jira.mongodb.org/browser/COMPASS-7437
+      return (
+        !Array.isArray(issuer.metadata.scopes_supported) ||
+        issuer.metadata.scopes_supported.includes(scope)
+      );
+    });
+  }
+
+  // prettier does not understand the return type syntax, TS does
+  private getIssuerClass() /*: typeof Issuer<BaseClient>*/ {
+    const oidcPluginCustomHttpOptionsProvider: CustomHttpOptionsProvider = (
+      urlObject,
+      options
+    ) => {
+      const url = urlObject.toString();
+      this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
+      validateSecureHTTPUrl(url, '<generic>');
+      const { customHttpOptions } = this.options;
+      if (customHttpOptions && typeof customHttpOptions === 'object')
+        return customHttpOptions;
+      else return customHttpOptions?.(url, options) ?? {};
+    };
+
+    class CustomIssuer extends Issuer<BaseClient> {
+      [custom.http_options]: CustomHttpOptionsProvider =
+        oidcPluginCustomHttpOptionsProvider;
+      static [custom.http_options]: CustomHttpOptionsProvider =
+        oidcPluginCustomHttpOptionsProvider;
+
+      constructor(...params: ConstructorParameters<typeof Issuer>) {
+        super(...params);
+        this.Client[custom.http_options] = oidcPluginCustomHttpOptionsProvider;
+        this.Client.prototype[custom.http_options] =
+          oidcPluginCustomHttpOptionsProvider;
+      }
+
+      static async discover(issuer: string): Promise<CustomIssuer> {
+        return new this((await super.discover(issuer)).metadata);
+      }
+
+      static async webfinger(input: string): Promise<CustomIssuer> {
+        return new this((await super.discover(input)).metadata);
+      }
+    }
+
+    return CustomIssuer;
+  }
+
   private async getOIDCClient(
     state: UserOIDCAuthState,
     redirectURIs?: string[]
@@ -320,17 +379,18 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     client: BaseClient;
   }> {
     const serverMetadata = state.serverOIDCMetadata;
-    const scope = [
-      ...new Set([
-        'openid',
-        'offline_access',
-        ...(serverMetadata.requestScopes ?? []),
-      ]),
-    ].join(' ');
+
+    const makeScope = (issuer: Issuer) =>
+      [
+        ...new Set([
+          ...this.getSupportedDefaultScopes(issuer),
+          ...(serverMetadata.requestScopes ?? []),
+        ]),
+      ].join(' ');
 
     if (state.client) {
       return {
-        scope,
+        scope: makeScope(state.client.issuer),
         issuer: state.client.issuer,
         // need to re-create Client here because redirect_uris might
         // differ between calls to this method
@@ -342,7 +402,21 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
-    const issuer = await Issuer.discover(serverMetadata.issuer);
+    let issuer: Issuer;
+    try {
+      issuer = await this.getIssuerClass().discover(serverMetadata.issuer);
+    } catch (err: unknown) {
+      // openid-client just forwards the raw Node.js HTTP error, we'll want to
+      // at least include the target URL here
+      throw new MongoDBOIDCError(
+        `Unable to fetch issuer metadata for ${JSON.stringify(
+          serverMetadata.issuer
+        )}: ${messageFromError(err)}`,
+        {
+          cause: err,
+        }
+      );
+    }
     validateSecureHTTPUrl(
       issuer.metadata.authorization_endpoint,
       'authorization_endpoint'
@@ -362,7 +436,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state.client = client;
 
     return {
-      scope,
+      scope: makeScope(issuer),
       issuer,
       client,
     };
@@ -603,11 +677,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
                 browserHandle?.once('error', (err) =>
                   reject(
                     new MongoDBOIDCError(
-                      `Opening browser failed with '${String(
-                        err && typeof err === 'object' && 'message' in err
-                          ? err.message
-                          : err
-                      )}'${extraErrorInfo()}`
+                      `Opening browser failed with '${messageFromError(
+                        err
+                      )}'${extraErrorInfo()}`,
+                      { cause: err }
                     )
                   )
                 );
@@ -775,6 +848,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
+      tokenType: state.currentTokenSet.set.token_type ?? null, // DPoP or Bearer
       hasRefreshToken: !!state.currentTokenSet.set.refresh_token,
       expiresAt: state.currentTokenSet.set.expires_at
         ? new Date(state.currentTokenSet.set.expires_at * 1000).toISOString()
