@@ -14,9 +14,8 @@ export type {
 
 export type {
   TypedEventEmitter,
-  OIDCCallbackContext,
-  OIDCRefreshFunction,
-  OIDCRequestFunction,
+  OIDCCallbackParams,
+  OIDCCallbackFunction,
   IdPServerInfo,
   IdPServerResponse,
   OIDCAbortSignal,

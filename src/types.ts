@@ -94,32 +94,23 @@ export interface IdPServerResponse {
 }
 
 /**
- * A copy of the Node.js driver's `OIDCCallbackContext`
+ * A copy of the Node.js driver's `OIDCCallbackParams` using `OIDCAbortSignal` instead of `AbortSignal`
  * @public
  */
-export interface OIDCCallbackContext {
+export interface OIDCCallbackParams {
   refreshToken?: string;
-  timeoutSeconds?: number;
-  timeoutContext?: OIDCAbortSignal;
-  version: number;
+  timeoutContext: OIDCAbortSignal;
+  version: 1;
+  username?: string;
+  idpInfo?: IdPServerInfo;
 }
-
-/**
- * A copy of the Node.js driver's `OIDCRequestFunction`
- * @public
- */
-export type OIDCRequestFunction = (
-  info: IdPServerInfo,
-  context: OIDCCallbackContext
-) => Promise<IdPServerResponse>;
 
 /**
  * A copy of the Node.js driver's `OIDCRefreshFunction`
  * @public
  */
-export type OIDCRefreshFunction = (
-  info: IdPServerInfo,
-  context: OIDCCallbackContext
+export type OIDCCallbackFunction = (
+  params: OIDCCallbackParams
 ) => Promise<IdPServerResponse>;
 
 /** @public */

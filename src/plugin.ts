@@ -1,7 +1,7 @@
 import type {
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
-  OIDCCallbackContext,
+  OIDCCallbackParams,
   IdPServerInfo,
   IdPServerResponse,
   TypedEventEmitter,
@@ -13,7 +13,6 @@ import {
   messageFromError,
   normalizeObject,
   throwIfAborted,
-  timeoutSignal,
   validateSecureHTTPUrl,
   withAbortCheck,
   withLock,
@@ -179,8 +178,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     this.logger = options.logger ?? new EventEmitter();
     this.mongoClientOptions = {
       authMechanismProperties: {
-        REQUEST_TOKEN_CALLBACK: this.requestToken.bind(this),
-        REFRESH_TOKEN_CALLBACK: this.requestToken.bind(this),
+        OIDC_HUMAN_CALLBACK: this.requestToken.bind(this),
       },
     };
     this.timers = { setTimeout, clearTimeout };
@@ -871,12 +869,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   public async requestToken(
-    serverMetadata: IdPServerInfo,
-    context: OIDCCallbackContext
+    params: OIDCCallbackParams
   ): Promise<IdPServerResponse> {
-    if (context.version !== 0) {
+    if (params.version !== 1) {
       throw new MongoDBOIDCError(
-        `OIDC MongoDB driver protocol mismatch: unknown version ${context.version}`
+        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+        `OIDC MongoDB driver protocol mismatch: unknown version ${params.version}`
       );
     }
 
@@ -886,23 +884,20 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       );
     }
 
-    const state = this.getAuthState(serverMetadata);
+    if (!params.idpInfo) {
+      throw new MongoDBOIDCError('No IdP information provided');
+    }
+
+    const state = this.getAuthState(params.idpInfo);
 
     if (state.currentAuthAttempt) {
       return await state.currentAuthAttempt;
     }
 
-    // The currently plan is for the 6.x driver (which may drop support
-    // for Node.js 14.x) to pass in an actual AbortSignal here. For
-    // compatibility with the 5.x driver/AbortSignal-less-Node.js, we accept
-    // a timeout in milliseconds as well.
-    const driverAbortSignal =
-      context.timeoutContext ??
-      (context.timeoutSeconds
-        ? timeoutSignal(context.timeoutSeconds * 1000)
-        : undefined);
-
-    const newAuthAttempt = this.initiateAuthAttempt(state, driverAbortSignal);
+    const newAuthAttempt = this.initiateAuthAttempt(
+      state,
+      params.timeoutContext
+    );
     try {
       state.currentAuthAttempt = newAuthAttempt;
       return await newAuthAttempt;

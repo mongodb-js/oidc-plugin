@@ -2,9 +2,8 @@ import type {
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,
   OIDCAbortSignal,
-  OIDCCallbackContext,
   IdPServerInfo,
-  OIDCRequestFunction,
+  OIDCCallbackFunction,
   OpenBrowserOptions,
 } from './';
 import { createMongoDBOIDCPlugin, hookLoggerToMongoLogWriter } from './';
@@ -57,15 +56,13 @@ async function fetchBrowser({ url }: OpenBrowserOptions): Promise<void> {
 function requestToken(
   plugin: MongoDBOIDCPlugin,
   oidcParams: IdPServerInfo,
-  abortSignal?: OIDCAbortSignal | number
-): ReturnType<OIDCRequestFunction> {
-  const clientInfo: OIDCCallbackContext = { version: 0 };
-  if (typeof abortSignal === 'number') clientInfo.timeoutSeconds = abortSignal;
-  else if (abortSignal) clientInfo.timeoutContext = abortSignal;
-  return plugin.mongoClientOptions.authMechanismProperties.REQUEST_TOKEN_CALLBACK(
-    oidcParams,
-    clientInfo
-  );
+  abortSignal?: OIDCAbortSignal
+): ReturnType<OIDCCallbackFunction> {
+  return plugin.mongoClientOptions.authMechanismProperties.OIDC_HUMAN_CALLBACK({
+    timeoutContext: abortSignal ?? new AbortController().signal,
+    version: 1,
+    idpInfo: oidcParams,
+  });
 }
 
 function getJWTContents(input: string): Record<string, unknown> {

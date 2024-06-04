@@ -6,8 +6,7 @@ import { MongoDBOIDCPluginImpl } from './plugin';
 import type {
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
-  OIDCRefreshFunction,
-  OIDCRequestFunction,
+  OIDCCallbackFunction,
   TypedEventEmitter,
 } from './types';
 import type { RequestOptions } from 'https';
@@ -197,8 +196,7 @@ export interface MongoDBOIDCPluginOptions {
 /** @public */
 export interface MongoDBOIDCPluginMongoClientOptions {
   readonly authMechanismProperties: {
-    readonly REQUEST_TOKEN_CALLBACK: OIDCRequestFunction;
-    readonly REFRESH_TOKEN_CALLBACK: OIDCRefreshFunction;
+    readonly OIDC_HUMAN_CALLBACK: OIDCCallbackFunction;
   };
 }
 
