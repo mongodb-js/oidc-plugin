@@ -7,7 +7,6 @@ import type { AddressInfo } from 'net';
 import { createConnection } from 'net';
 import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
-import { AbortController } from './util';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
 
