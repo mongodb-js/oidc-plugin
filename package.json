@@ -30,7 +30,7 @@
     "import": "./dist/.esm-wrapper.mjs"
   },
   "engines": {
-    "node": ">= 14.18.0"
+    "node": ">= 16.20.1"
   },
   "types": "./index.d.ts",
   "scripts": {
