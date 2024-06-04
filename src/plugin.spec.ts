@@ -22,7 +22,6 @@ import {
   oktaBrowserAuthCodeFlow,
   oktaBrowserDeviceAuthFlow,
 } from '../test/oidc-test-provider';
-import { AbortController, AbortSignal } from './util';
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
@@ -59,7 +58,7 @@ function requestToken(
   abortSignal?: OIDCAbortSignal
 ): ReturnType<OIDCCallbackFunction> {
   return plugin.mongoClientOptions.authMechanismProperties.OIDC_HUMAN_CALLBACK({
-    timeoutContext: abortSignal ?? new AbortController().signal,
+    timeoutContext: abortSignal,
     version: 1,
     idpInfo: oidcParams,
   });

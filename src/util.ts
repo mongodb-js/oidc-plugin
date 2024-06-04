@@ -45,13 +45,6 @@ export function errorString(err: unknown): string {
   );
 }
 
-export const AbortController =
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  globalThis.AbortController ?? require('abort-controller').AbortController;
-export const AbortSignal =
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  globalThis.AbortSignal ?? require('abort-controller').AbortSignal;
-
 // AbortSignal.timeout, but consistently .unref()ed
 export function timeoutSignal(ms: number): AbortSignal {
   const controller = new AbortController();

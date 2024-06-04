@@ -8,7 +8,6 @@ import type {
 } from './types';
 import { MongoDBOIDCError } from './types';
 import {
-  AbortController,
   errorString,
   messageFromError,
   normalizeObject,

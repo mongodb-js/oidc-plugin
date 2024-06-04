@@ -99,7 +99,7 @@ export interface IdPServerResponse {
  */
 export interface OIDCCallbackParams {
   refreshToken?: string;
-  timeoutContext: OIDCAbortSignal;
+  timeoutContext?: OIDCAbortSignal;
   version: 1;
   username?: string;
   idpInfo?: IdPServerInfo;
