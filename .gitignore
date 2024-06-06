@@ -7,3 +7,4 @@ coverage
 lib/
 .deps
 index.d.ts
+.DS_Store
