@@ -168,6 +168,27 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ]);
     });
 
+    it('can optionally use id tokens instead of access tokens', async function () {
+      pluginOptions = {
+        ...defaultOpts,
+        allowedFlows: ['auth-code'],
+        openBrowser: functioningAuthCodeBrowserFlow,
+        passIdTokenAsAccessToken: true,
+      };
+      plugin = createMongoDBOIDCPlugin(pluginOptions);
+      const result = await requestToken(
+        plugin,
+        provider.getMongodbOIDCDBInfo()
+      );
+      const accessTokenContents = getJWTContents(result.accessToken);
+      expect(accessTokenContents.sub).to.equal('testuser');
+      expect(accessTokenContents.aud).to.equal(
+        provider.getMongodbOIDCDBInfo().clientId
+      );
+      expect(accessTokenContents.client_id).to.equal(undefined);
+      verifySuccessfulAuthCodeFlowLog(await readLog());
+    });
+
     it('will refresh tokens if they are expiring', async function () {
       const skipAuthAttemptEvent = once(
         logger,

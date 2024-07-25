@@ -229,7 +229,7 @@ export function hookLoggerToMongoLogWriter(
 
   emitter.on(
     'mongodb-oidc-plugin:auth-succeeded',
-    ({ tokenType, refreshToken, expiresAt }) => {
+    ({ tokenType, refreshToken, expiresAt, passIdTokenAsAccessToken }) => {
       log.info(
         'OIDC-PLUGIN',
         mongoLogId(1_002_000_017),
@@ -239,6 +239,7 @@ export function hookLoggerToMongoLogWriter(
           tokenType,
           refreshToken,
           expiresAt,
+          passIdTokenAsAccessToken,
         }
       );
     }

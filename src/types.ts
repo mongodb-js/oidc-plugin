@@ -64,6 +64,7 @@ export interface MongoDBOIDCLogEventsMap {
     tokenType: string | null;
     refreshToken: string | null;
     expiresAt: string | null;
+    passIdTokenAsAccessToken: boolean;
     tokens: {
       accessToken: string | undefined;
       idToken: string | undefined;

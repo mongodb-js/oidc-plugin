@@ -806,6 +806,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     };
     this.options.signal?.addEventListener('abort', optionsAbortCb);
     driverAbortSignal?.addEventListener('abort', driverAbortCb);
+    const { passIdTokenAsAccessToken } = this.options;
     const signal = combinedAbortController.signal;
 
     try {
@@ -860,7 +861,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         if (error) throw error;
       }
 
-      if (!state.currentTokenSet?.set?.access_token) {
+      if (passIdTokenAsAccessToken && !state.currentTokenSet?.set?.id_token) {
+        throw new MongoDBOIDCError('Could not retrieve valid ID token');
+      } else if (!state.currentTokenSet?.set?.access_token) {
         throw new MongoDBOIDCError('Could not retrieve valid access token');
       }
     } catch (err: unknown) {
@@ -873,22 +876,24 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       driverAbortSignal?.removeEventListener('abort', driverAbortCb);
     }
 
+    const { token_type, expires_at, access_token, id_token, refresh_token } =
+      state.currentTokenSet.set;
+
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
-      tokenType: state.currentTokenSet.set.token_type ?? null, // DPoP or Bearer
-      refreshToken: getRefreshTokenId(state.currentTokenSet.set.refresh_token),
-      expiresAt: state.currentTokenSet.set.expires_at
-        ? new Date(state.currentTokenSet.set.expires_at * 1000).toISOString()
-        : null,
+      tokenType: token_type ?? null, // DPoP or Bearer
+      refreshToken: getRefreshTokenId(refresh_token),
+      expiresAt: expires_at ? new Date(expires_at * 1000).toISOString() : null,
+      passIdTokenAsAccessToken: !!passIdTokenAsAccessToken,
       tokens: {
-        accessToken: state.currentTokenSet.set.access_token,
-        idToken: state.currentTokenSet.set.id_token,
-        refreshToken: state.currentTokenSet.set.refresh_token,
+        accessToken: access_token,
+        idToken: id_token,
+        refreshToken: refresh_token,
       },
     });
 
     return {
-      accessToken: state.currentTokenSet.set.access_token,
-      refreshToken: state.currentTokenSet.set.refresh_token,
+      accessToken: passIdTokenAsAccessToken ? id_token || '' : access_token,
+      refreshToken: refresh_token,
       // Passing `expiresInSeconds: 0` results in the driver not caching the token.
       // We perform our own caching here inside the plugin, so interactions with the
       // cache of the driver are not really required or necessarily helpful.
