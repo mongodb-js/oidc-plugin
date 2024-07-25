@@ -101,7 +101,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
       ctx: 'test-oidc',
       msg: 'Authentication succeeded',
       attr: (attr: Record<string, unknown>) => {
-        expect(attr.hasRefreshToken).to.equal(true);
+        expect(attr.refreshToken).to.be.a('string');
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         expect(new Date(attr.expiresAt as string).toISOString()).to.equal(
           attr.expiresAt

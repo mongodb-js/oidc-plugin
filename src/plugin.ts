@@ -9,6 +9,7 @@ import type {
 import { MongoDBOIDCError } from './types';
 import {
   errorString,
+  getRefreshTokenId,
   messageFromError,
   normalizeObject,
   throwIfAborted,
@@ -147,6 +148,7 @@ export function automaticRefreshTimeoutMS(
 }
 
 const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
+let updateIdCounter = 0;
 
 function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
   return promise.catch((err) => {
@@ -558,6 +560,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
 
+    const refreshTokenId = getRefreshTokenId(tokenSet.refresh_token);
+    const updateId = updateIdCounter++;
+
     const timerDuration = automaticRefreshTimeoutMS(tokenSet);
     // Use `.call()` because in browsers, `setTimeout()` requires that it is called
     // without a `this` value. `.unref()` is not available in browsers either.
@@ -577,21 +582,38 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       }
       // Only refresh this token set if it is the one currently
       // being used.
-      if (state.currentTokenSet?.set !== tokenSet) return false;
+      if (state.currentTokenSet?.set !== tokenSet) {
+        this.logger.emit('mongodb-oidc-plugin:refresh-skipped', {
+          triggeringUpdateId: updateId,
+          expectedRefreshToken: refreshTokenId,
+          actualRefreshToken: getRefreshTokenId(
+            state.currentTokenSet?.set?.refresh_token
+          ),
+        });
+        return false;
+      }
       try {
-        this.logger.emit('mongodb-oidc-plugin:refresh-started');
+        this.logger.emit('mongodb-oidc-plugin:refresh-started', {
+          triggeringUpdateId: updateId,
+          refreshToken: refreshTokenId,
+        });
 
         const { client } = await this.getOIDCClient(state);
         const refreshedTokens = await client.refresh(tokenSet);
         // Check again to avoid race conditions.
         if (state.currentTokenSet?.set === tokenSet) {
-          this.logger.emit('mongodb-oidc-plugin:refresh-succeeded');
+          this.logger.emit('mongodb-oidc-plugin:refresh-succeeded', {
+            triggeringUpdateId: updateId,
+            refreshToken: refreshTokenId,
+          });
           this.updateStateWithTokenSet(state, refreshedTokens);
           return true;
         }
       } catch (err: unknown) {
         this.logger.emit('mongodb-oidc-plugin:refresh-failed', {
           error: errorString(err),
+          triggeringUpdateId: updateId,
+          refreshToken: refreshTokenId,
         });
       }
       return false;
@@ -602,7 +624,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       tryRefresh,
     };
 
-    this.logger.emit('mongodb-oidc-plugin:state-updated');
+    this.logger.emit('mongodb-oidc-plugin:state-updated', {
+      updateId,
+      timerDuration,
+    });
   }
 
   static readonly defaultRedirectURI = 'http://localhost:27097/redirect';
@@ -667,6 +692,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           new Promise<never>((resolve, reject) => {
             this.openBrowser({ url: localUrl, signal })
               .then((browserHandle) => {
+                this.logger.emit('mongodb-oidc-plugin:open-browser-complete');
                 const extraErrorInfo = () =>
                   browserHandle?.spawnargs
                     ? ` (${JSON.stringify(browserHandle.spawnargs)})`
@@ -697,11 +723,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         const timeout: Promise<never> = allowFallbackIfFailed(
           new Promise((resolve, reject) => {
             if (this.options.openBrowserTimeout !== 0) {
-              setTimeout(
-                reject,
-                this.options.openBrowserTimeout ?? kDefaultOpenBrowserTimeout,
-                new MongoDBOIDCError('Opening browser timed out')
-              ).unref();
+              this.timers.setTimeout
+                .call(
+                  null,
+                  () =>
+                    reject(new MongoDBOIDCError('Opening browser timed out')),
+                  this.options.openBrowserTimeout ?? kDefaultOpenBrowserTimeout
+                )
+                ?.unref?.();
             }
           })
         );
@@ -846,10 +875,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
       tokenType: state.currentTokenSet.set.token_type ?? null, // DPoP or Bearer
-      hasRefreshToken: !!state.currentTokenSet.set.refresh_token,
+      refreshToken: getRefreshTokenId(state.currentTokenSet.set.refresh_token),
       expiresAt: state.currentTokenSet.set.expires_at
         ? new Date(state.currentTokenSet.set.expires_at * 1000).toISOString()
         : null,
+      tokens: {
+        accessToken: state.currentTokenSet.set.access_token,
+        idToken: state.currentTokenSet.set.id_token,
+        refreshToken: state.currentTokenSet.set.refresh_token,
+      },
     });
 
     return {

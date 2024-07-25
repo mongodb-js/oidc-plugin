@@ -1,4 +1,5 @@
 import type { OIDCAbortSignal } from './types';
+import { createHash, randomBytes } from 'crypto';
 
 class AbortError extends Error {
   constructor() {
@@ -120,5 +121,17 @@ export function messageFromError(err: unknown): string {
       typeof err.message === 'string'
       ? err.message
       : err
+  );
+}
+
+const salt = randomBytes(16);
+export function getRefreshTokenId(
+  token: string | null | undefined
+): string | null {
+  if (!token) return null;
+  // Add a prefix to indicate that this isn't an actual refresh token,
+  // that might unnecessarily worry users
+  return (
+    'debugid:' + createHash('sha256').update(salt).update(token).digest('hex')
   );
 }

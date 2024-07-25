@@ -3,7 +3,10 @@ export interface MongoDBOIDCLogEventsMap {
   'mongodb-oidc-plugin:deserialization-failed': (event: {
     error: string;
   }) => void;
-  'mongodb-oidc-plugin:state-updated': () => void;
+  'mongodb-oidc-plugin:state-updated': (event: {
+    updateId: number;
+    timerDuration: number | undefined;
+  }) => void;
   'mongodb-oidc-plugin:local-redirect-accessed': (event: {
     id: string;
   }) => void;
@@ -32,19 +35,40 @@ export interface MongoDBOIDCLogEventsMap {
   'mongodb-oidc-plugin:open-browser': (event: {
     customOpener: boolean;
   }) => void;
+  'mongodb-oidc-plugin:open-browser-complete': () => void;
   'mongodb-oidc-plugin:notify-device-flow': () => void;
   'mongodb-oidc-plugin:auth-attempt-started': (event: { flow: string }) => void;
   'mongodb-oidc-plugin:auth-attempt-succeeded': () => void;
   'mongodb-oidc-plugin:auth-attempt-failed': (event: { error: string }) => void;
-  'mongodb-oidc-plugin:refresh-started': () => void;
-  'mongodb-oidc-plugin:refresh-succeeded': () => void;
-  'mongodb-oidc-plugin:refresh-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:refresh-skipped': (event: {
+    triggeringUpdateId: number;
+    expectedRefreshToken: string | null;
+    actualRefreshToken: string | null;
+  }) => void;
+  'mongodb-oidc-plugin:refresh-started': (event: {
+    triggeringUpdateId: number;
+    refreshToken: string | null;
+  }) => void;
+  'mongodb-oidc-plugin:refresh-succeeded': (event: {
+    triggeringUpdateId: number;
+    refreshToken: string | null;
+  }) => void;
+  'mongodb-oidc-plugin:refresh-failed': (event: {
+    error: string;
+    triggeringUpdateId: number;
+    refreshToken: string | null;
+  }) => void;
   'mongodb-oidc-plugin:skip-auth-attempt': (event: { reason: string }) => void;
   'mongodb-oidc-plugin:auth-failed': (event: { error: string }) => void;
   'mongodb-oidc-plugin:auth-succeeded': (event: {
     tokenType: string | null;
-    hasRefreshToken: boolean;
+    refreshToken: string | null;
     expiresAt: string | null;
+    tokens: {
+      accessToken: string | undefined;
+      idToken: string | undefined;
+      refreshToken: string | undefined;
+    };
   }) => void;
   'mongodb-oidc-plugin:destroyed': () => void;
   'mongodb-oidc-plugin:missing-id-token': () => void;
