@@ -168,6 +168,27 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ]);
     });
 
+    it('can optionally use id tokens instead of access tokens', async function () {
+      pluginOptions = {
+        ...defaultOpts,
+        allowedFlows: ['auth-code'],
+        openBrowser: functioningAuthCodeBrowserFlow,
+        passIdTokenAsAccessToken: true,
+      };
+      plugin = createMongoDBOIDCPlugin(pluginOptions);
+      const result = await requestToken(
+        plugin,
+        provider.getMongodbOIDCDBInfo()
+      );
+      const accessTokenContents = getJWTContents(result.accessToken);
+      expect(accessTokenContents.sub).to.equal('testuser');
+      expect(accessTokenContents.aud).to.equal(
+        provider.getMongodbOIDCDBInfo().clientId
+      );
+      expect(accessTokenContents.client_id).to.equal(undefined);
+      verifySuccessfulAuthCodeFlowLog(await readLog());
+    });
+
     it('will refresh tokens if they are expiring', async function () {
       const skipAuthAttemptEvent = once(
         logger,
@@ -266,18 +287,22 @@ describe('OIDC plugin (local OIDC provider)', function () {
           provider.getMongodbOIDCDBInfo()
         );
 
-        expect(timeouts).to.have.lengthOf(1);
+        expect(timeouts).to.have.lengthOf(2);
+        // 0 -> browser timeout, 1 -> refresh timeout
         expect(timeouts[0].refed).to.equal(false);
         expect(timeouts[0].cleared).to.equal(false);
+        expect(timeouts[0].timeout).to.equal(60_000);
+        expect(timeouts[1].refed).to.equal(false);
+        expect(timeouts[1].cleared).to.equal(false);
         // openid-client bases expiration time on the actual current time, so
         // allow for a small margin of error
-        expect(timeouts[0].timeout).to.be.greaterThanOrEqual(9_600_000);
-        expect(timeouts[0].timeout).to.be.lessThanOrEqual(9_800_000);
+        expect(timeouts[1].timeout).to.be.greaterThanOrEqual(9_600_000);
+        expect(timeouts[1].timeout).to.be.lessThanOrEqual(9_800_000);
         const refreshStartedEvent = once(
           plugin.logger,
           'mongodb-oidc-plugin:refresh-started'
         );
-        timeouts[0].fn();
+        timeouts[1].fn();
         await refreshStartedEvent;
         await once(plugin.logger, 'mongodb-oidc-plugin:refresh-succeeded');
 
@@ -302,14 +327,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
         provider.accessTokenTTLSeconds = 10000;
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
 
-        expect(timeouts).to.have.lengthOf(1);
-        expect(timeouts[0].refed).to.equal(false);
-        expect(timeouts[0].cleared).to.equal(false);
+        expect(timeouts).to.have.lengthOf(2);
+        expect(timeouts[1].refed).to.equal(false);
+        expect(timeouts[1].cleared).to.equal(false);
         await plugin.destroy();
 
-        expect(timeouts).to.have.lengthOf(1);
-        expect(timeouts[0].refed).to.equal(false);
-        expect(timeouts[0].cleared).to.equal(true);
+        expect(timeouts).to.have.lengthOf(2);
+        expect(timeouts[1].refed).to.equal(false);
+        expect(timeouts[1].cleared).to.equal(true);
       });
     });
 

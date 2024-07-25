@@ -140,6 +140,15 @@ export function hookLoggerToMongoLogWriter(
     );
   });
 
+  emitter.on('mongodb-oidc-plugin:open-browser-complete', () => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_025),
+      `${contextPrefix}-oidc`,
+      'Successfully opened browser'
+    );
+  });
+
   emitter.on('mongodb-oidc-plugin:notify-device-flow', () => {
     log.info(
       'OIDC-PLUGIN',
@@ -218,33 +227,51 @@ export function hookLoggerToMongoLogWriter(
     );
   });
 
-  emitter.on('mongodb-oidc-plugin:auth-succeeded', (ev) => {
+  emitter.on(
+    'mongodb-oidc-plugin:auth-succeeded',
+    ({ tokenType, refreshToken, expiresAt, passIdTokenAsAccessToken }) => {
+      log.info(
+        'OIDC-PLUGIN',
+        mongoLogId(1_002_000_017),
+        `${contextPrefix}-oidc`,
+        'Authentication succeeded',
+        {
+          tokenType,
+          refreshToken,
+          expiresAt,
+          passIdTokenAsAccessToken,
+        }
+      );
+    }
+  );
+
+  emitter.on('mongodb-oidc-plugin:refresh-skipped', (ev) => {
     log.info(
       'OIDC-PLUGIN',
-      mongoLogId(1_002_000_017),
+      mongoLogId(1_002_000_026),
       `${contextPrefix}-oidc`,
-      'Authentication succeeded',
-      {
-        ...ev,
-      }
+      'Token refresh attempt skipped',
+      { ...ev }
     );
   });
 
-  emitter.on('mongodb-oidc-plugin:refresh-started', () => {
+  emitter.on('mongodb-oidc-plugin:refresh-started', (ev) => {
     log.info(
       'OIDC-PLUGIN',
       mongoLogId(1_002_000_018),
       `${contextPrefix}-oidc`,
-      'Token refresh attempt started'
+      'Token refresh attempt started',
+      { ...ev }
     );
   });
 
-  emitter.on('mongodb-oidc-plugin:refresh-succeeded', () => {
+  emitter.on('mongodb-oidc-plugin:refresh-succeeded', (ev) => {
     log.info(
       'OIDC-PLUGIN',
       mongoLogId(1_002_000_019),
       `${contextPrefix}-oidc`,
-      'Token refresh attempt succeeded'
+      'Token refresh attempt succeeded',
+      { ...ev }
     );
   });
 
@@ -295,6 +322,16 @@ export function hookLoggerToMongoLogWriter(
       `${contextPrefix}-oidc`,
       'Inbound HTTP request',
       { url: redactUrl(ev.url) }
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:state-updated', (ev) => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_027),
+      `${contextPrefix}-oidc`,
+      'Updated internal token store state',
+      { ...ev }
     );
   });
 }

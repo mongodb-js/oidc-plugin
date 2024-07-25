@@ -191,6 +191,12 @@ export interface MongoDBOIDCPluginOptions {
   customHttpOptions?:
     | HttpOptions
     | ((url: string, options: Readonly<HttpOptions>) => HttpOptions);
+
+  /**
+   * Pass ID tokens in place of access tokens. For debugging/working around
+   * broken identity providers.
+   */
+  passIdTokenAsAccessToken?: boolean;
 }
 
 /** @public */
