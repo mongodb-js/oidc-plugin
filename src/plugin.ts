@@ -52,7 +52,7 @@ type LastIdTokenClaims =
 interface UserOIDCAuthState {
   // The information that the driver forwarded to us from the server
   // about the OIDC Identity Provider config.
-  serverOIDCMetadata: IdPServerInfo;
+  serverOIDCMetadata: IdPServerInfo & Pick<OIDCCallbackParams, 'username'>;
   // A Promise that resolves when the current authentication attempt
   // is finished, if there is one at the moment.
   currentAuthAttempt: Promise<IdPServerResponse> | null;
@@ -288,7 +288,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
   // Return the current state for a given [server, username] configuration,
   // or create a new one if none exists.
-  private getAuthState(serverMetadata: IdPServerInfo): UserOIDCAuthState {
+  private getAuthState(
+    serverMetadata: IdPServerInfo & Pick<OIDCCallbackParams, 'username'>
+  ): UserOIDCAuthState {
     if (!serverMetadata.issuer || typeof serverMetadata.issuer !== 'string') {
       throw new MongoDBOIDCError(`'issuer' is missing`);
     }
@@ -909,6 +911,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   public async requestToken(
     params: OIDCCallbackParams
   ): Promise<IdPServerResponse> {
+    this.logger.emit('mongodb-oidc-plugin:received-server-params', { params });
     if (params.version !== 1) {
       throw new MongoDBOIDCError(
         // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
@@ -926,7 +929,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       throw new MongoDBOIDCError('No IdP information provided');
     }
 
-    const state = this.getAuthState(params.idpInfo);
+    const state = this.getAuthState({
+      ...params.idpInfo,
+      username: params.username,
+    });
 
     if (state.currentAuthAttempt) {
       return await state.currentAuthAttempt;

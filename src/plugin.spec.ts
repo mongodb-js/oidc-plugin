@@ -55,12 +55,14 @@ async function fetchBrowser({ url }: OpenBrowserOptions): Promise<void> {
 function requestToken(
   plugin: MongoDBOIDCPlugin,
   oidcParams: IdPServerInfo,
-  abortSignal?: OIDCAbortSignal
+  abortSignal?: OIDCAbortSignal,
+  username?: string
 ): ReturnType<OIDCCallbackFunction> {
   return plugin.mongoClientOptions.authMechanismProperties.OIDC_HUMAN_CALLBACK({
     timeoutContext: abortSignal,
     version: 1,
     idpInfo: oidcParams,
+    username,
   });
 }
 
@@ -498,6 +500,47 @@ describe('OIDC plugin (local OIDC provider)', function () {
           { flow: 'auth-code' },
         ]);
         expect(pluginOptions.allowedFlows).to.have.been.calledTwice;
+      });
+    });
+
+    context('when the server metadata/user data changes', function () {
+      beforeEach(function () {
+        (pluginOptions.allowedFlows = sinon.stub().resolves(['auth-code'])),
+          (plugin = createMongoDBOIDCPlugin(pluginOptions));
+      });
+
+      it('it will perform two different auth flows', async function () {
+        await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo(),
+          undefined,
+          'usera'
+        );
+        expect(pluginOptions.allowedFlows).to.have.callCount(1);
+        await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo(),
+          undefined,
+          'userb'
+        );
+        expect(pluginOptions.allowedFlows).to.have.callCount(2);
+        await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo(),
+          undefined,
+          'userb'
+        );
+        expect(pluginOptions.allowedFlows).to.have.callCount(2);
+        await requestToken(
+          plugin,
+          {
+            ...provider.getMongodbOIDCDBInfo(),
+            extraKey: 'asdf',
+          } as IdPServerInfo,
+          undefined,
+          'userb'
+        );
+        expect(pluginOptions.allowedFlows).to.have.callCount(3);
       });
     });
   });
