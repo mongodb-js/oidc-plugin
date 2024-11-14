@@ -657,6 +657,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     let client!: BaseClient;
     let actualRedirectURI!: string;
 
+    const nonce = generators.nonce();
+
     try {
       await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
         // We mark the operations that we want to allow to result in a fallback
@@ -680,6 +682,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           code_challenge: codeChallenge,
           code_challenge_method: 'S256',
           state: oidcStateParam,
+          nonce,
         });
         validateSecureHTTPUrl(authCodeFlowUrl, 'authCodeFlowUrl');
         const { localUrl, onAccessed: onLocalUrlAccessed } =
@@ -760,6 +763,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const tokenSet = await client.callback(actualRedirectURI, params, {
       code_verifier: codeVerifier,
       state: oidcStateParam,
+      nonce,
     });
     this.updateStateWithTokenSet(state, tokenSet);
   }
