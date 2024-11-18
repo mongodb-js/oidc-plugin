@@ -18,9 +18,9 @@ jobs:
         node-version: [16.x, 18.x, 20.x]
     runs-on: ${{matrix.os}}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
         # the oidc-provider package we use doesn't list Node.js 20 as supported
@@ -37,13 +37,11 @@ jobs:
         node-version: [18.x]
     runs-on: ${{matrix.os}}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - name: Install npm@8 for Node.js 14
-        run: node -e 'process.exitCode = +process.version.startsWith("v14")' || npm install -g npm@8
       - name: Install Dependencies
         run: npm ci --ignore-engines
       - name: Compile
