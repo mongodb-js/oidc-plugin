@@ -159,6 +159,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
             ...opts,
           };
           plugin = createMongoDBOIDCPlugin(pluginOptions);
+          let idToken: string | undefined;
+          plugin.logger.once('mongodb-oidc-plugin:auth-succeeded', (event) => {
+            idToken = event.tokens.idToken;
+          });
 
           const result = await requestToken(
             plugin,
@@ -170,9 +174,15 @@ describe('OIDC plugin (local OIDC provider)', function () {
             provider.getMongodbOIDCDBInfo().clientId
           );
 
-          const log = await readLog();
-          console.log(log);
-          verifySuccessfulAuthCodeFlowLog(log);
+          verifySuccessfulAuthCodeFlowLog(await readLog());
+
+          expect(idToken).to.not.be.undefined;
+          const idTokenContents = getJWTContents(idToken!);
+          if (opts.skipNonceInAuthCodeRequest) {
+            expect(idTokenContents.nonce).to.be.undefined;
+          } else {
+            expect(idTokenContents.nonce).to.not.be.undefined;
+          }
         }
     );
 
