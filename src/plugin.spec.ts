@@ -77,6 +77,19 @@ async function delay(ms: number) {
   return await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function testAuthCodeFlow(
+  fn: (opts: Partial<MongoDBOIDCPluginOptions>) => Mocha.Func
+): void {
+  for (let skipNonceInAuthCodeRequest of [true, false]) {
+    describe(`with skipNonceInAuthCodeRequest: ${skipNonceInAuthCodeRequest}`, function () {
+      it(
+        'can successfully authenticate with auth code flow',
+        fn({ skipNonceInAuthCodeRequest })
+      );
+    });
+  }
+}
+
 describe('OIDC plugin (local OIDC provider)', function () {
   this.timeout(90_000);
 
@@ -138,18 +151,30 @@ describe('OIDC plugin (local OIDC provider)', function () {
       plugin = createMongoDBOIDCPlugin(pluginOptions);
     });
 
-    it('can request tokens through the browser', async function () {
-      const result = await requestToken(
-        plugin,
-        provider.getMongodbOIDCDBInfo()
-      );
-      const accessTokenContents = getJWTContents(result.accessToken);
-      expect(accessTokenContents.sub).to.equal('testuser');
-      expect(accessTokenContents.client_id).to.equal(
-        provider.getMongodbOIDCDBInfo().clientId
-      );
-      verifySuccessfulAuthCodeFlowLog(await readLog());
-    });
+    testAuthCodeFlow(
+      (opts) =>
+        async function () {
+          pluginOptions = {
+            ...pluginOptions,
+            ...opts,
+          };
+          plugin = createMongoDBOIDCPlugin(pluginOptions);
+
+          const result = await requestToken(
+            plugin,
+            provider.getMongodbOIDCDBInfo()
+          );
+          const accessTokenContents = getJWTContents(result.accessToken);
+          expect(accessTokenContents.sub).to.equal('testuser');
+          expect(accessTokenContents.client_id).to.equal(
+            provider.getMongodbOIDCDBInfo().clientId
+          );
+
+          const log = await readLog();
+          console.log(log);
+          verifySuccessfulAuthCodeFlowLog(log);
+        }
+    );
 
     it('will re-use tokens while they are valid if no username was provided', async function () {
       const skipAuthAttemptEvent = once(
@@ -1017,18 +1042,22 @@ describe('OIDC plugin (local OIDC provider)', function () {
       };
     });
 
-    it('can successfully authenticate with Okta using auth code flow', async function () {
-      plugin = createMongoDBOIDCPlugin({
-        ...defaultOpts,
-        allowedFlows: ['auth-code'],
-        openBrowser: (opts) =>
-          oktaBrowserAuthCodeFlow({ ...opts, username, password }),
-      });
-      const result = await requestToken(plugin, metadata);
+    testAuthCodeFlow(
+      (opts) =>
+        async function () {
+          plugin = createMongoDBOIDCPlugin({
+            ...defaultOpts,
+            allowedFlows: ['auth-code'],
+            openBrowser: (opts) =>
+              oktaBrowserAuthCodeFlow({ ...opts, username, password }),
+            ...opts,
+          });
+          const result = await requestToken(plugin, metadata);
 
-      validateToken(getJWTContents(result.accessToken));
-      verifySuccessfulAuthCodeFlowLog(await readLog());
-    });
+          validateToken(getJWTContents(result.accessToken));
+          verifySuccessfulAuthCodeFlowLog(await readLog());
+        }
+    );
 
     it('can successfully authenticate with Okta using device auth flow', async function () {
       plugin = createMongoDBOIDCPlugin({
@@ -1087,18 +1116,22 @@ describe('OIDC plugin (local OIDC provider)', function () {
       };
     });
 
-    it('can successfully authenticate with Azure using auth code flow', async function () {
-      plugin = createMongoDBOIDCPlugin({
-        ...defaultOpts,
-        allowedFlows: ['auth-code'],
-        openBrowser: (opts) =>
-          azureBrowserAuthCodeFlow({ ...opts, username, password }),
-      });
-      const result = await requestToken(plugin, metadata);
+    testAuthCodeFlow(
+      (opts) =>
+        async function () {
+          plugin = createMongoDBOIDCPlugin({
+            ...defaultOpts,
+            allowedFlows: ['auth-code'],
+            openBrowser: (opts) =>
+              azureBrowserAuthCodeFlow({ ...opts, username, password }),
+            ...opts,
+          });
+          const result = await requestToken(plugin, metadata);
 
-      validateToken(getJWTContents(result.accessToken));
-      verifySuccessfulAuthCodeFlowLog(await readLog());
-    });
+          validateToken(getJWTContents(result.accessToken));
+          verifySuccessfulAuthCodeFlowLog(await readLog());
+        }
+    );
 
     it('can successfully authenticate with Azure using device auth flow', async function () {
       plugin = createMongoDBOIDCPlugin({

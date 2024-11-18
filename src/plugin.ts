@@ -657,7 +657,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     let client!: BaseClient;
     let actualRedirectURI!: string;
 
-    const nonce = generators.nonce();
+    const nonce = this.options.skipNonceInAuthCodeRequest
+      ? undefined
+      : generators.nonce();
 
     try {
       await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
