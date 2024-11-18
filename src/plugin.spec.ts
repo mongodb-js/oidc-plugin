@@ -80,8 +80,8 @@ async function delay(ms: number) {
 function testAuthCodeFlow(
   fn: (opts: Partial<MongoDBOIDCPluginOptions>) => Mocha.Func
 ): void {
-  for (let skipNonceInAuthCodeRequest of [true, false]) {
-    describe(`with skipNonceInAuthCodeRequest: ${skipNonceInAuthCodeRequest}`, function () {
+  for (const skipNonceInAuthCodeRequest of [true, false]) {
+    describe(`with skipNonceInAuthCodeRequest: ${skipNonceInAuthCodeRequest.toString()}`, function () {
       it(
         'can successfully authenticate with auth code flow',
         fn({ skipNonceInAuthCodeRequest })
@@ -177,6 +177,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
           verifySuccessfulAuthCodeFlowLog(await readLog());
 
           expect(idToken).to.not.be.undefined;
+
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- we know it's non-null from the above check
           const idTokenContents = getJWTContents(idToken!);
           if (opts.skipNonceInAuthCodeRequest) {
             expect(idTokenContents.nonce).to.be.undefined;
