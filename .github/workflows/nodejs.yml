@@ -52,7 +52,7 @@ jobs:
   package:
     name: Package for publishing
     runs-on: ubuntu-latest
-    if: ${{ contains(github.head_ref, 'release') }}
+    if: ${{ startsWith(github.head_ref, 'release/') }}
     steps:
       - uses: actions/checkout@v4
 
