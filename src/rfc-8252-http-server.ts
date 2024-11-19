@@ -300,14 +300,18 @@ export class RFC8252HTTPServer {
    */
   public get listeningPort(): number | undefined {
     if (this.servers.length === 0) return undefined;
-    const ports = new Set(
-      this.servers.map((srv) => (srv.address() as AddressInfo)?.port)
+    const addresses: AddressInfo[] = this.servers.map(
+      (srv) => srv.address() as AddressInfo
     );
+    const ports = new Set(addresses.map((addr) => addr.port));
     const port = ports.size === 1 && [...ports][0];
     if (typeof port !== 'number') {
+      const addressesDebugInfo = addresses
+        .map((addr) => JSON.stringify(addr))
+        .join(',');
       // Should never happen
       throw new MongoDBOIDCError(
-        `Server is listening in inconsistent state: ${[...ports].join(',')}`
+        `Server is listening in inconsistent state: ${addressesDebugInfo}`
       );
     }
     return port;
@@ -343,8 +347,11 @@ export class RFC8252HTTPServer {
       );
     }
 
+    const urlPort = this.redirectUrl.port === '' ? 80 : +this.redirectUrl.port;
+
     this.logger.emit('mongodb-oidc-plugin:local-listen-started', {
       url: this.redirectUrl.toString(),
+      urlPort,
     });
 
     // https://www.rfc-editor.org/rfc/rfc8252#section-7.3 states:
@@ -363,9 +370,18 @@ export class RFC8252HTTPServer {
     let hostname = this.redirectUrl.hostname;
     if (hostname.startsWith('[') && hostname.endsWith(']'))
       hostname = hostname.slice(1, -1);
-    const dnsResults = await dns.lookup(hostname, {
-      all: true,
-      hints: ADDRCONFIG,
+    const dnsResults = (
+      await dns.lookup(hostname, {
+        all: true,
+        hints: ADDRCONFIG,
+      })
+    ).map(({ address, family }) => ({ address, family }));
+
+    this.logger.emit('mongodb-oidc-plugin:local-listen-resolved-hostname', {
+      url: this.redirectUrl.toString(),
+      urlPort,
+      hostname,
+      interfaces: dnsResults,
     });
 
     if (dnsResults.length === 0) {
@@ -375,9 +391,6 @@ export class RFC8252HTTPServer {
     }
 
     try {
-      const urlPort =
-        this.redirectUrl.port === '' ? 80 : +this.redirectUrl.port;
-
       // Two scenarios: Either we are listening on an arbitrary port here,
       // or listening on a specific port. Using an arbitrary port has the
       // advantage that the OS will allocate a free one for us, while a
@@ -406,7 +419,7 @@ export class RFC8252HTTPServer {
           if (typeof port !== 'number') {
             // Should never happen
             throw new MongoDBOIDCError(
-              `Listening on ${dnsResults[0].address} did not return a port`
+              `Listening on ${dnsResults[0].address} (family = ${dnsResults[0].family}) did not return a port`
             );
           }
         }
@@ -429,13 +442,16 @@ export class RFC8252HTTPServer {
       await this.close();
       this.logger.emit('mongodb-oidc-plugin:local-listen-failed', {
         url: this.redirectUrl.toString(),
+        error: String(
+          err && typeof err === 'object' && 'message' in err ? err.message : err
+        ),
       });
       throw err;
     }
 
     this.logger.emit('mongodb-oidc-plugin:local-listen-succeeded', {
       url: this.listeningRedirectUrl || '',
-      interfaces: dnsResults.map((dnsResult) => dnsResult.address),
+      interfaces: dnsResults,
     });
   }
 

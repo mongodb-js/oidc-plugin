@@ -33,8 +33,13 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
         expect(attr.url).to.match(/http:\/\/localhost.*\/redirect/);
         expect(attr.interfaces).to.be.an('array');
         expect(attr.interfaces).to.have.lengthOf.greaterThanOrEqual(1);
-        for (const item of attr.interfaces as unknown[])
-          expect(item).to.be.a('string');
+        for (const item of attr.interfaces as {
+          address: string;
+          family: number;
+        }[]) {
+          expect(item.address).to.be.a('string');
+          expect(item.family).to.be.a('number');
+        }
       },
     },
     {

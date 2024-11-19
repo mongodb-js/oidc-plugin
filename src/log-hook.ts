@@ -92,6 +92,18 @@ export function hookLoggerToMongoLogWriter(
     );
   });
 
+  emitter.on('mongodb-oidc-plugin:local-listen-resolved-hostname', (ev) => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_028),
+      `${contextPrefix}-oidc`,
+      'Resolved hostnames for local server',
+      {
+        ...ev,
+      }
+    );
+  });
+
   emitter.on('mongodb-oidc-plugin:local-listen-failed', (ev) => {
     log.error(
       'OIDC-PLUGIN',
