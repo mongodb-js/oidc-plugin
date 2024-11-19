@@ -25,11 +25,23 @@ export interface MongoDBOIDCLogEventsMap {
     method: string;
     path: string;
   }) => void;
-  'mongodb-oidc-plugin:local-listen-started': (event: { url: string }) => void;
-  'mongodb-oidc-plugin:local-listen-failed': (event: { url: string }) => void;
+  'mongodb-oidc-plugin:local-listen-started': (event: {
+    url: string;
+    urlPort: number;
+  }) => void;
+  'mongodb-oidc-plugin:local-listen-resolved-hostname': (event: {
+    url: string;
+    urlPort: number;
+    hostname: string;
+    interfaces: { family: number; address: string }[];
+  }) => void;
+  'mongodb-oidc-plugin:local-listen-failed': (event: {
+    url: string;
+    error: string;
+  }) => void;
   'mongodb-oidc-plugin:local-listen-succeeded': (event: {
     url: string;
-    interfaces: string[];
+    interfaces: { family: number; address: string }[];
   }) => void;
   'mongodb-oidc-plugin:local-server-close': (event: { url: string }) => void;
   'mongodb-oidc-plugin:open-browser': (event: {
