@@ -48,3 +48,30 @@ jobs:
         run: npm run compile
       - name: Check
         run: npm run check
+
+  package:
+    name: Package for publishing
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.head_ref, 'release') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Install Dependencies
+        run: npm ci --ignore-engines
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Pack
+        run: npm pack
+
+      - name: Archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: mongodb-js-oidc-plugin-*.tgz
