@@ -197,6 +197,14 @@ export interface MongoDBOIDCPluginOptions {
    * broken identity providers.
    */
   passIdTokenAsAccessToken?: boolean;
+
+  /**
+   * Skip the nonce parameter in the Authorization Code request. This could
+   * be used to work with providers that don't support the nonce parameter.
+   *
+   * Default is `false`.
+   */
+  skipNonceInAuthCodeRequest?: boolean;
 }
 
 /** @public */

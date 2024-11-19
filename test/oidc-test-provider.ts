@@ -282,10 +282,13 @@ async function waitForTitle(
 ): Promise<void> {
   await browser.waitUntil(async () => {
     const actual = (await browser.$(selector).getText()).trim();
-    let matches;
-    if (typeof expected === 'string')
+    let matches: boolean;
+    if (typeof expected === 'string') {
       matches = actual.toLowerCase() === expected.toLowerCase();
-    else matches = expected.test(actual);
+    } else {
+      matches = expected.test(actual);
+    }
+
     if (!matches) {
       throw new Error(`Wanted title "${String(expected)}", saw "${actual}"`);
     }
@@ -481,7 +484,7 @@ export async function azureBrowserDeviceAuthFlow({
   try {
     const normalizeUserCode = (str: string) => str.replace(/-/g, '');
     browser = await spawnBrowser(verificationUrl, true);
-    await waitForTitle(browser, 'Enter code', 'div[role="heading"]');
+    await waitForTitle(browser, /Enter code/, 'div[role="heading"]');
     await ensureValue(
       browser,
       'input[name="otc"]',
