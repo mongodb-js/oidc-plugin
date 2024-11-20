@@ -31,7 +31,7 @@ jobs:
         uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # 7.0.5
         with:
           branch: release/${{ steps.version.outputs.new-version }}
-          title: 'chore: Bump version to ${{ steps.version.outputs.new-version }}'
+          title: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
           draft: false
           body: An automated PR for next release.
           commit-message: Bump package.json version to ${{ steps.version.outputs.new-version }}
