@@ -7,7 +7,9 @@ jobs:
   publish:
     name: Publish Release
     runs-on: ubuntu-latest
-    environment: Production
+    environment:
+      name: Production
+      url: https://www.npmjs.com/package/@mongodb-js/oidc-plugin/v/${{ steps.get-version.outputs.package_version }}
     steps:
       - uses: actions/checkout@v4
 
