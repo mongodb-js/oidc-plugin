@@ -4,12 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       version_update_type:
-        description: What type of version bump should be done
+        description: What type of version bump should be done.
         type: choice
         options:
           - patch
           - minor
           - major
+      exact_version:
+        description: An optional exact version to bump to. If this is specified, version_update_type will be ignored.
+        type: string
+        required: false
 
 jobs:
   prepare:
@@ -24,7 +28,7 @@ jobs:
 
       - name: Bump version
         run: |
-          echo "new-version=$(npm version ${{ github.event.inputs.version_update_type }} --no-git-tag-version)" >> $GITHUB_OUTPUT
+          echo "new-version=$(npm version ${{ github.event.inputs.exact_version || github.event.inputs.version_update_type }} --no-git-tag-version)" >> $GITHUB_OUTPUT
         id: version
 
       - name: Create Release PR
@@ -33,6 +37,11 @@ jobs:
           branch: release/${{ steps.version.outputs.new-version }}
           title: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
           draft: false
-          body: An automated PR for next release.
+          body: |
+            An automated PR for next release.
+
+            **Note**: Don't merge this manually. Instead, run the [Publish Release](${{ github.server_url }}/${{github.repository}}/actions/workflows/publish-release.yml) workflow using `release/${{ steps.version.outputs.new-version }}` as target branch.
+
+            This PR will be merged automatically and a new Github release will be tagged when the package is published to NPM.
           commit-message: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
           labels: ignore-for-release
