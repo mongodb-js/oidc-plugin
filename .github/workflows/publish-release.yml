@@ -54,6 +54,6 @@ jobs:
           generateReleaseNotes: true
           name: ${{ steps.get-version.outputs.package_version }}
           commit: main
-          tag: ${{ steps.get-version.outputs.package_version }}
+          tag: v${{ steps.get-version.outputs.package_version }}
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
