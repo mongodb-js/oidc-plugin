@@ -34,5 +34,5 @@ jobs:
           title: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
           draft: false
           body: An automated PR for next release.
-          commit-message: Bump package.json version to ${{ steps.version.outputs.new-version }}
+          commit-message: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
           labels: ignore-for-release
