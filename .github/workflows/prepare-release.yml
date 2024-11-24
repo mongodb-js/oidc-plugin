@@ -36,6 +36,7 @@ jobs:
         with:
           branch: release/${{ steps.version.outputs.new-version }}
           title: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
+          token: ${{ secrets.SVC_DEVTOOLSBOT_TOKEN }}
           draft: false
           body: |
             An automated PR for next release.
