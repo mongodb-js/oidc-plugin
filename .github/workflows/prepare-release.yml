@@ -19,6 +19,12 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
+      - uses: mongodb-js/devtools-shared/actions/setup-bot-token@main
+        id: app-token
+        with:
+          app-id: ${{ vars.DEVTOOLS_BOT_APP_ID }}
+          private-key: ${{ secrets.DEVTOOLS_BOT_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
 
       - name: Use Node.js 20.x
@@ -36,7 +42,7 @@ jobs:
         with:
           branch: release/${{ steps.version.outputs.new-version }}
           title: 'chore: bump version to ${{ steps.version.outputs.new-version }}'
-          token: ${{ secrets.SVC_DEVTOOLSBOT_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           draft: false
           body: |
             An automated PR for next release.
