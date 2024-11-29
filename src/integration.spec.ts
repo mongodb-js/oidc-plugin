@@ -281,5 +281,36 @@ describe('integration test with mongod', function () {
         await client.close();
       }
     });
+
+    it.only('can successfully authenticate with a fake Auth Code Flow without an id_token - with a warning', async function () {
+      getTokenPayload = () => ({
+        ...tokenPayload,
+        // id_token will not be included
+        skipIdToken: true,
+      });
+
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+      });
+      const client = await MongoClient.connect(connectionString, {
+        ...plugin.mongoClientOptions,
+      });
+      try {
+        const status = await client
+          .db('admin')
+          .command({ connectionStatus: 1 });
+        expect(status).to.deep.equal({
+          ok: 1,
+          authInfo: {
+            authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
+            authenticatedUserRoles: [{ role: 'dev/testgroup', db: 'admin' }],
+          },
+        });
+      } finally {
+        await client.close();
+      }
+    });
   });
 });
