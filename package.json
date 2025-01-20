@@ -75,7 +75,7 @@
     "husky": "^8.0.3",
     "mocha": "^10.2.0",
     "mongodb": "^6.7.0",
-    "mongodb-log-writer": "^1.1.5",
+    "mongodb-log-writer": "^2.1.0",
     "mongodb-runner": "^5.2.0",
     "node-fetch": "^3.3.1",
     "nyc": "^15.1.0",
