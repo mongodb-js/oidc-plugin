@@ -9,6 +9,7 @@ import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
+import { promises as dns } from 'dns';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -483,6 +484,73 @@ describe('RFC8252HTTPServer', function () {
         status: 404,
         result: 'unknown-url',
       });
+    });
+  });
+
+  context('with dns duplicates', function () {
+    const originalDnsLookup = dns.lookup;
+    let dnsLookupStub: sinon.SinonStub;
+
+    this.beforeEach(function () {
+      dnsLookupStub = sinon.stub();
+      dns.lookup = dnsLookupStub;
+    });
+
+    this.afterEach(function () {
+      dns.lookup = originalDnsLookup;
+    });
+
+    it('only filters exact duplicates', async function () {
+      dnsLookupStub.resolves([
+        { address: '127.0.0.1', family: 4 },
+        { address: '127.0.0.1', family: 4 },
+        { address: '[::1]', family: 6 },
+        { address: '[::1]', family: 6 },
+      ]);
+
+      const interfaces = await RFC8252HTTPServer['_getAllInterfaces'].call(
+        'localhost'
+      );
+
+      expect(interfaces).to.have.lengthOf(2);
+      expect(interfaces[0].address).to.equal('127.0.0.1');
+      expect(interfaces[1].address).to.equal('[::1]');
+      expect(interfaces[0].family).to.equal(4);
+      expect(interfaces[1].family).to.equal(6);
+    });
+
+    it('keeps same addresses, different family', async function () {
+      dnsLookupStub.resolves([
+        { address: '127.0.0.1', family: 4 },
+        { address: '127.0.0.1', family: 6 },
+      ]);
+
+      const interfaces = await RFC8252HTTPServer['_getAllInterfaces'].call(
+        'localhost'
+      );
+
+      expect(interfaces).to.have.lengthOf(2);
+      expect(interfaces[0].address).to.equal('127.0.0.1');
+      expect(interfaces[1].address).to.equal('127.0.0.1');
+      expect(interfaces[0].family).to.equal(4);
+      expect(interfaces[1].family).to.equal(6);
+    });
+
+    it('keeps same familes, different address', async function () {
+      dnsLookupStub.resolves([
+        { address: '127.0.0.1', family: 4 },
+        { address: '192.168.1.15', family: 4 },
+      ]);
+
+      const interfaces = await RFC8252HTTPServer['_getAllInterfaces'].call(
+        'localhost'
+      );
+
+      expect(interfaces).to.have.lengthOf(2);
+      expect(interfaces[0].address).to.equal('127.0.0.1');
+      expect(interfaces[1].address).to.equal('192.168.1.15');
+      expect(interfaces[0].family).to.equal(4);
+      expect(interfaces[1].family).to.equal(4);
     });
   });
 });
