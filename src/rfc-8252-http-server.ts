@@ -29,6 +29,26 @@ export interface RFC8252HTTPServerOptions {
   redirectServerRequestHandler?: RedirectServerRequestHandler;
 }
 
+export async function getAllInterfaces(
+  hostname: string,
+  lookup: typeof dns.lookup = dns.lookup
+): Promise<{ address: string; family: number }[]> {
+  const dnsResults = await lookup(hostname, {
+    all: true,
+    hints: ADDRCONFIG,
+  });
+
+  return dnsResults
+    .filter(
+      (dns, index, arr) =>
+        arr.findIndex(
+          (otherDns) =>
+            dns.address === otherDns.address && dns.family === otherDns.family
+        ) === index
+    )
+    .map(({ address, family }) => ({ address, family }));
+}
+
 /** @internal */
 export class RFC8252HTTPServer {
   private readonly redirectUrl: URL;
@@ -272,25 +292,6 @@ export class RFC8252HTTPServer {
     });
   };
 
-  private static async _getAllInterfaces(
-    hostname: string
-  ): Promise<{ address: string; family: number }[]> {
-    const dnsResults = await dns.lookup(hostname, {
-      all: true,
-      hints: ADDRCONFIG,
-    });
-
-    return dnsResults
-      .filter(
-        (dns, index, arr) =>
-          arr.findIndex(
-            (otherDns) =>
-              dns.address === otherDns.address && dns.family === otherDns.family
-          ) === index
-      )
-      .map(({ address, family }) => ({ address, family }));
-  }
-
   /**
    * Add a redirect from a local URL served on the server to an external URL.
    */
@@ -391,7 +392,7 @@ export class RFC8252HTTPServer {
       hostname = hostname.slice(1, -1);
     }
 
-    const dnsResults = await RFC8252HTTPServer._getAllInterfaces(hostname);
+    const dnsResults = await getAllInterfaces(hostname);
 
     this.logger.emit('mongodb-oidc-plugin:local-listen-resolved-hostname', {
       url: this.redirectUrl.toString(),

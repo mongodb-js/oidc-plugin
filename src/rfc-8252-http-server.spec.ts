@@ -1,4 +1,4 @@
-import { RFC8252HTTPServer } from './rfc-8252-http-server';
+import { getAllInterfaces, RFC8252HTTPServer } from './rfc-8252-http-server';
 import { expect } from 'chai';
 import type { Server as HTTPServer } from 'http';
 import { createServer as createHTTPServer } from 'http';
@@ -487,19 +487,13 @@ describe('RFC8252HTTPServer', function () {
     });
   });
 
-  context('with dns duplicates', function () {
+  context('getAllInterfaces', function () {
     let dnsLookupStub: sinon.SinonStub;
-    const _getAllInterfaces = RFC8252HTTPServer['_getAllInterfaces'];
-
     this.beforeEach(function () {
-      dnsLookupStub = sinon.stub(dns, 'lookup');
+      dnsLookupStub = sinon.stub();
     });
 
-    this.afterEach(function () {
-      sinon.restore();
-    });
-
-    it('only filters exact duplicates', async function () {
+    it('filters out exact duplicates', async function () {
       dnsLookupStub.resolves([
         { address: '127.0.0.1', family: 4 },
         { address: '127.0.0.1', family: 4 },
@@ -507,7 +501,7 @@ describe('RFC8252HTTPServer', function () {
         { address: '[::1]', family: 6 },
       ]);
 
-      const interfaces = await _getAllInterfaces('localhost');
+      const interfaces = await getAllInterfaces('localhost', dnsLookupStub);
 
       expect(interfaces).to.have.lengthOf(2);
       expect(interfaces[0].address).to.equal('127.0.0.1');
@@ -522,7 +516,7 @@ describe('RFC8252HTTPServer', function () {
         { address: '127.0.0.1', family: 6 },
       ]);
 
-      const interfaces = await _getAllInterfaces('localhost');
+      const interfaces = await getAllInterfaces('localhost', dnsLookupStub);
 
       expect(interfaces).to.have.lengthOf(2);
       expect(interfaces[0].address).to.equal('127.0.0.1');
@@ -537,7 +531,7 @@ describe('RFC8252HTTPServer', function () {
         { address: '192.168.1.15', family: 4 },
       ]);
 
-      const interfaces = await _getAllInterfaces('localhost');
+      const interfaces = await getAllInterfaces('localhost', dnsLookupStub);
 
       expect(interfaces).to.have.lengthOf(2);
       expect(interfaces[0].address).to.equal('127.0.0.1');
