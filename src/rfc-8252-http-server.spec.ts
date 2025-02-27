@@ -9,7 +9,6 @@ import type { SinonSandbox } from 'sinon';
 import sinon from 'sinon';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
-import { promises as dns } from 'dns';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
