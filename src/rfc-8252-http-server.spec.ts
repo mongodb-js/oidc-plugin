@@ -488,16 +488,15 @@ describe('RFC8252HTTPServer', function () {
   });
 
   context('with dns duplicates', function () {
-    const originalDnsLookup = dns.lookup;
     let dnsLookupStub: sinon.SinonStub;
+    const _getAllInterfaces = RFC8252HTTPServer['_getAllInterfaces'];
 
     this.beforeEach(function () {
-      dnsLookupStub = sinon.stub();
-      dns.lookup = dnsLookupStub;
+      dnsLookupStub = sinon.stub(dns, 'lookup');
     });
 
     this.afterEach(function () {
-      dns.lookup = originalDnsLookup;
+      sinon.restore();
     });
 
     it('only filters exact duplicates', async function () {
@@ -508,9 +507,7 @@ describe('RFC8252HTTPServer', function () {
         { address: '[::1]', family: 6 },
       ]);
 
-      const interfaces = await RFC8252HTTPServer['_getAllInterfaces'].call(
-        'localhost'
-      );
+      const interfaces = await _getAllInterfaces('localhost');
 
       expect(interfaces).to.have.lengthOf(2);
       expect(interfaces[0].address).to.equal('127.0.0.1');
@@ -525,9 +522,7 @@ describe('RFC8252HTTPServer', function () {
         { address: '127.0.0.1', family: 6 },
       ]);
 
-      const interfaces = await RFC8252HTTPServer['_getAllInterfaces'].call(
-        'localhost'
-      );
+      const interfaces = await _getAllInterfaces('localhost');
 
       expect(interfaces).to.have.lengthOf(2);
       expect(interfaces[0].address).to.equal('127.0.0.1');
@@ -542,9 +537,7 @@ describe('RFC8252HTTPServer', function () {
         { address: '192.168.1.15', family: 4 },
       ]);
 
-      const interfaces = await RFC8252HTTPServer['_getAllInterfaces'].call(
-        'localhost'
-      );
+      const interfaces = await _getAllInterfaces('localhost');
 
       expect(interfaces).to.have.lengthOf(2);
       expect(interfaces[0].address).to.equal('127.0.0.1');
