@@ -1,4 +1,4 @@
-import { RFC8252HTTPServer } from './rfc-8252-http-server';
+import { getAllInterfaces, RFC8252HTTPServer } from './rfc-8252-http-server';
 import { expect } from 'chai';
 import type { Server as HTTPServer } from 'http';
 import { createServer as createHTTPServer } from 'http';
@@ -483,6 +483,60 @@ describe('RFC8252HTTPServer', function () {
         status: 404,
         result: 'unknown-url',
       });
+    });
+  });
+
+  context('getAllInterfaces', function () {
+    let dnsLookupStub: sinon.SinonStub;
+    this.beforeEach(function () {
+      dnsLookupStub = sinon.stub();
+    });
+
+    it('filters out exact duplicates', async function () {
+      dnsLookupStub.resolves([
+        { address: '127.0.0.1', family: 4 },
+        { address: '127.0.0.1', family: 4 },
+        { address: '[::1]', family: 6 },
+        { address: '[::1]', family: 6 },
+      ]);
+
+      const interfaces = await getAllInterfaces('localhost', dnsLookupStub);
+
+      expect(interfaces).to.have.lengthOf(2);
+      expect(interfaces[0].address).to.equal('127.0.0.1');
+      expect(interfaces[1].address).to.equal('[::1]');
+      expect(interfaces[0].family).to.equal(4);
+      expect(interfaces[1].family).to.equal(6);
+    });
+
+    it('keeps same addresses, different family', async function () {
+      dnsLookupStub.resolves([
+        { address: '127.0.0.1', family: 4 },
+        { address: '127.0.0.1', family: 6 },
+      ]);
+
+      const interfaces = await getAllInterfaces('localhost', dnsLookupStub);
+
+      expect(interfaces).to.have.lengthOf(2);
+      expect(interfaces[0].address).to.equal('127.0.0.1');
+      expect(interfaces[1].address).to.equal('127.0.0.1');
+      expect(interfaces[0].family).to.equal(4);
+      expect(interfaces[1].family).to.equal(6);
+    });
+
+    it('keeps same familes, different address', async function () {
+      dnsLookupStub.resolves([
+        { address: '127.0.0.1', family: 4 },
+        { address: '192.168.1.15', family: 4 },
+      ]);
+
+      const interfaces = await getAllInterfaces('localhost', dnsLookupStub);
+
+      expect(interfaces).to.have.lengthOf(2);
+      expect(interfaces[0].address).to.equal('127.0.0.1');
+      expect(interfaces[1].address).to.equal('192.168.1.15');
+      expect(interfaces[0].family).to.equal(4);
+      expect(interfaces[1].family).to.equal(4);
     });
   });
 });
