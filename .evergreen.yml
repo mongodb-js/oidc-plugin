@@ -5,17 +5,6 @@ functions:
     - command: git.get_project
       params:
         directory: src
-  install_node:
-    - command: shell.exec
-      params:
-        working_dir: src
-        shell: bash
-        script: |
-          set -e
-          set -x
-
-          export NODE_VERSION=16.19.0
-          bash .evergreen/install-node.sh
   install:
     - command: shell.exec
       params:
@@ -25,7 +14,7 @@ functions:
           set -e
           set -x
 
-          . .evergreen/use-node.sh
+          export PATH=/opt/devtools/node16/bin:$PATH
           npm ci
   check:
     - command: shell.exec
@@ -36,7 +25,7 @@ functions:
           set -e
           set -x
 
-          . .evergreen/use-node.sh
+          export PATH=/opt/devtools/node16/bin:$PATH
           npm run compile
           npm run check
   test:
@@ -60,7 +49,7 @@ functions:
           # just keeps timing out.
           if echo "${distro_id}" | grep -q ubuntu; then export SKIP_REGULAR_BROWSER_TESTING=true; fi
 
-          . .evergreen/use-node.sh
+          export PATH=/opt/devtools/node16/bin:$PATH
           npm run test-ci
   test_electron:
     - command: shell.exec
@@ -77,26 +66,23 @@ functions:
           set -e
           set -x
 
-          . .evergreen/use-node.sh
+          export PATH=/opt/devtools/node16/bin:$PATH
           npm run test-electron
 
 tasks:
   - name: test
     commands:
       - func: checkout
-      - func: install_node
       - func: install
       - func: test
   - name: test_electron
     commands:
       - func: checkout
-      - func: install_node
       - func: install
       - func: test_electron
   - name: check
     commands:
       - func: checkout
-      - func: install_node
       - func: install
       - func: check
 
