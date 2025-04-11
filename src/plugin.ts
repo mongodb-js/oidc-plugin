@@ -123,27 +123,47 @@ async function getDefaultOpenBrowser(): Promise<
   };
 }
 
+// Trimmed-down type for easier testing
+type TokenSetExpiryInfo = Pick<
+  TokenSet,
+  'refresh_token' | 'id_token' | 'expires_at'
+> & {
+  claims?: () => { exp: number };
+};
+
+function tokenExpiryInSeconds(
+  tokenSet: TokenSetExpiryInfo = {},
+  passIdTokenAsAccessToken = false
+): number {
+  // If we have an ID token and are supposed to use it, its `exp` claim
+  // specifies the token expiry. Otherwise, we assume that the `expires_at`
+  // value presented by the OIDC provider is correct, since OIDC clients are
+  // not supposed to inspect access tokens and treat them as opaque.
+  const expiresAt =
+    (tokenSet.id_token &&
+      passIdTokenAsAccessToken &&
+      tokenSet.claims?.().exp) ||
+    tokenSet.expires_at ||
+    0;
+  return Math.max(0, (expiresAt ?? 0) - Date.now() / 1000);
+}
+
 /** @internal Exported for testing only */
 export function automaticRefreshTimeoutMS(
-  tokenSet: Pick<TokenSet, 'refresh_token' | 'expires_in'>
+  tokenSet: TokenSetExpiryInfo,
+  passIdTokenAsAccessToken = false
 ): number | undefined {
+  const expiresIn = tokenExpiryInSeconds(tokenSet, passIdTokenAsAccessToken);
+  if (!tokenSet.refresh_token || !expiresIn) return;
+
   // If the tokens expire in more than 1 minute, automatically register
   // a refresh handler. (They should not expire in less; however,
   // if we didn't handle that case, we'd run the risk of refreshing very
   // frequently.) Refresh the token 5 minutes before expiration or
   // halfway between now and the expiration time, whichever comes later
   // (expires in 1 hour -> refresh in 55 min, expires in 5 min -> refresh in 2.5 min).
-  if (
-    tokenSet.refresh_token &&
-    tokenSet.expires_in &&
-    tokenSet.expires_in >= 60 /* 1 minute */
-  ) {
-    return (
-      Math.max(
-        tokenSet.expires_in - 300 /* 5 minutes */,
-        tokenSet.expires_in / 2
-      ) * 1000
-    );
+  if (expiresIn >= 60 /* 1 minute */) {
+    return Math.max(expiresIn - 300 /* 5 minutes */, expiresIn / 2) * 1000;
   }
 }
 
@@ -565,7 +585,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const refreshTokenId = getRefreshTokenId(tokenSet.refresh_token);
     const updateId = updateIdCounter++;
 
-    const timerDuration = automaticRefreshTimeoutMS(tokenSet);
+    const timerDuration = automaticRefreshTimeoutMS(
+      tokenSet,
+      this.options.passIdTokenAsAccessToken
+    );
     // Use `.call()` because in browsers, `setTimeout()` requires that it is called
     // without a `this` value. `.unref()` is not available in browsers either.
     if (state.timer) this.timers.clearTimeout.call(null, state.timer);
@@ -819,7 +842,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     try {
       get_tokens: {
-        if ((state.currentTokenSet?.set?.expires_in ?? 0) > 5 * 60) {
+        if (
+          tokenExpiryInSeconds(
+            state.currentTokenSet?.set,
+            passIdTokenAsAccessToken
+          ) >
+          5 * 60
+        ) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
             reason: 'not-expired',
           });

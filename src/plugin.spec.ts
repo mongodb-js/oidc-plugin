@@ -905,24 +905,66 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
   describe('automaticRefreshTimeoutMS', function () {
     it('returns the correct automatic refresh timeout', function () {
+      const now = () => Date.now() / 1000;
       expect(automaticRefreshTimeoutMS({})).to.equal(undefined);
-      expect(automaticRefreshTimeoutMS({ expires_in: 10000 })).to.equal(
+      expect(automaticRefreshTimeoutMS({ expires_at: now() + 10000 })).to.equal(
         undefined
       );
       expect(
-        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 10000 })
+        automaticRefreshTimeoutMS({
+          refresh_token: 'asdf',
+          expires_at: now() + 10000,
+        })
       ).to.equal(9700000);
       expect(
-        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 100 })
+        automaticRefreshTimeoutMS({
+          refresh_token: 'asdf',
+          expires_at: now() + 100,
+        })
       ).to.equal(50000);
       expect(
-        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 10 })
+        automaticRefreshTimeoutMS(
+          {
+            refresh_token: 'asdf',
+            expires_at: now() + 100,
+            id_token: '...',
+            claims() {
+              return { exp: now() + 500 };
+            },
+          },
+          true
+        )
+      ).to.equal(250000);
+      expect(
+        automaticRefreshTimeoutMS(
+          {
+            refresh_token: 'asdf',
+            expires_at: now() + 100,
+            id_token: '...',
+            claims() {
+              return { exp: now() + 500 };
+            },
+          },
+          false
+        )
+      ).to.equal(50000);
+      expect(
+        automaticRefreshTimeoutMS({
+          refresh_token: 'asdf',
+          expires_at: now() + 10,
+        })
       ).to.equal(undefined);
       expect(
-        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: 0 })
+        automaticRefreshTimeoutMS({
+          refresh_token: 'asdf',
+          expires_at: now() + 0,
+        })
       ).to.equal(undefined);
       expect(
-        automaticRefreshTimeoutMS({ refresh_token: 'asdf', expires_in: -10 })
+        automaticRefreshTimeoutMS({
+          refresh_token: 'asdf',
+          expires_at: now() + -10,
+        })
       ).to.equal(undefined);
     });
   });
