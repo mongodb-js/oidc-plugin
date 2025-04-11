@@ -10,6 +10,7 @@ import { MongoDBOIDCError } from './types';
 import {
   errorString,
   getRefreshTokenId,
+  getStableTokenSetId,
   messageFromError,
   normalizeObject,
   throwIfAborted,
@@ -69,6 +70,10 @@ interface UserOIDCAuthState {
   // A cached Client instance that uses the issuer metadata as discovered
   // through serverOIDCMetadata.
   client?: Client;
+  // A set of refresh token IDs which are currently being rejected, i.e.
+  // where the driver has called our callback indicating that the corresponding
+  // access token has become invalid.
+  discardingTokenSets?: string[];
 }
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -239,6 +244,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           lastIdTokenClaims: serializedState.lastIdTokenClaims
             ? { ...serializedState.lastIdTokenClaims }
             : undefined,
+          discardingTokenSets: serializedState.discardingTokenSets,
         };
         this.updateStateWithTokenSet(
           state,
@@ -274,6 +280,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }
                 : undefined,
+              discardingTokenSets: state.discardingTokenSets ?? [],
             },
           ] as const;
         }),
@@ -652,6 +659,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     this.logger.emit('mongodb-oidc-plugin:state-updated', {
       updateId,
       timerDuration,
+      tokenSetId: getStableTokenSetId(tokenSet),
     });
   }
 
@@ -821,7 +829,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
   private async initiateAuthAttempt(
     state: UserOIDCAuthState,
-    driverAbortSignal?: OIDCAbortSignal
+    driverAbortSignal?: OIDCAbortSignal,
+    { forceRefreshOrReauth = false } = {}
   ): Promise<IdPServerResponse> {
     throwIfAborted(this.options.signal);
     throwIfAborted(driverAbortSignal);
@@ -843,11 +852,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     try {
       get_tokens: {
         if (
+          !forceRefreshOrReauth &&
           tokenExpiryInSeconds(
             state.currentTokenSet?.set,
             passIdTokenAsAccessToken
           ) >
-          5 * 60
+            5 * 60
         ) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
             reason: 'not-expired',
@@ -915,6 +925,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     const { token_type, expires_at, access_token, id_token, refresh_token } =
       state.currentTokenSet.set;
+    const tokenSetId = getStableTokenSetId(state.currentTokenSet.set);
+
+    // We would not want to return the access token or ID token of a token set whose
+    // accompanying refresh token was passed to us by
+    const willRetryWithForceRefreshOrReauth =
+      !forceRefreshOrReauth &&
+      !!state.discardingTokenSets?.includes(tokenSetId);
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
       tokenType: token_type ?? null, // DPoP or Bearer
@@ -926,11 +943,20 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         idToken: id_token,
         refreshToken: refresh_token,
       },
+      tokenSetId,
+      forceRefreshOrReauth,
+      willRetryWithForceRefreshOrReauth,
     });
+
+    if (willRetryWithForceRefreshOrReauth) {
+      return await this.initiateAuthAttempt(state, driverAbortSignal, {
+        forceRefreshOrReauth: true,
+      });
+    }
 
     return {
       accessToken: passIdTokenAsAccessToken ? id_token || '' : access_token,
-      refreshToken: refresh_token,
+      refreshToken: tokenSetId,
       // Passing `expiresInSeconds: 0` results in the driver not caching the token.
       // We perform our own caching here inside the plugin, so interactions with the
       // cache of the driver are not really required or necessarily helpful.
@@ -969,20 +995,39 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       username: params.username,
     });
 
-    if (state.currentAuthAttempt) {
-      return await state.currentAuthAttempt;
+    // If the driver called us with a refresh token, that means that its corresponding
+    // access token has become invalid and we should always return a new one.
+    if (params.refreshToken) {
+      (state.discardingTokenSets ??= []).push(params.refreshToken);
+      this.logger.emit('mongodb-oidc-plugin:discarding-token-set', {
+        tokenSetId: params.refreshToken,
+      });
     }
 
-    const newAuthAttempt = this.initiateAuthAttempt(
-      state,
-      params.timeoutContext
-    );
     try {
-      state.currentAuthAttempt = newAuthAttempt;
-      return await newAuthAttempt;
+      if (state.currentAuthAttempt) {
+        return await state.currentAuthAttempt;
+      }
+
+      const newAuthAttempt = this.initiateAuthAttempt(
+        state,
+        params.timeoutContext
+      );
+      try {
+        state.currentAuthAttempt = newAuthAttempt;
+        return await newAuthAttempt;
+      } finally {
+        if (state.currentAuthAttempt === newAuthAttempt)
+          state.currentAuthAttempt = null;
+      }
     } finally {
-      if (state.currentAuthAttempt === newAuthAttempt)
-        state.currentAuthAttempt = null;
+      if (params.refreshToken) {
+        const index =
+          state.discardingTokenSets?.indexOf(params.refreshToken) ?? -1;
+        if (index > 0) {
+          state.discardingTokenSets?.splice(index, 1);
+        }
+      }
     }
   }
 

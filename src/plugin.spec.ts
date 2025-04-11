@@ -56,13 +56,15 @@ function requestToken(
   plugin: MongoDBOIDCPlugin,
   oidcParams: IdPServerInfo,
   abortSignal?: OIDCAbortSignal,
-  username?: string
+  username?: string,
+  refreshToken?: string
 ): ReturnType<OIDCCallbackFunction> {
   return plugin.mongoClientOptions.authMechanismProperties.OIDC_HUMAN_CALLBACK({
     timeoutContext: abortSignal,
     version: 1,
     idpInfo: oidcParams,
     username,
+    refreshToken,
   });
 }
 
@@ -390,6 +392,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
           'currentTokenSet',
+          'discardingTokenSets',
           'lastIdTokenClaims',
           'serverOIDCMetadata',
         ]);
@@ -1274,6 +1277,93 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     it('will omit built-in scopes if the IdP does not announce support for them', async function () {
       additionalIssuerMetadata = () => ({ scopes_supported: ['openid'] });
       expect(await getScopes()).to.deep.equal(['openid']);
+    });
+  });
+
+  context('when drivers re-request tokens early', function () {
+    let plugin: MongoDBOIDCPlugin;
+
+    beforeEach(function () {
+      plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+    });
+
+    it('will return a different token even if the existing one is not yet expired', async function () {
+      const result1 = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      const result2 = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      const result3 = await requestToken(
+        plugin,
+        {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        },
+        undefined,
+        undefined,
+        result2.refreshToken
+      );
+      const result4 = await requestToken(
+        plugin,
+        {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        },
+        undefined,
+        undefined,
+        result2.refreshToken
+      );
+      expect(result1).to.deep.equal(result2);
+      expect(result2.accessToken).not.to.equal(result3.accessToken);
+      expect(result2.refreshToken).not.to.equal(result3.refreshToken);
+      expect(result3).to.deep.equal(result4);
+    });
+
+    it('will return only one new token per expired token even when called in parallel', async function () {
+      const result1 = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      const [result2, result3] = await Promise.all([
+        requestToken(
+          plugin,
+          {
+            issuer: provider.issuer,
+            clientId: 'mockclientid',
+            requestScopes: [],
+          },
+          undefined,
+          undefined,
+          result1.refreshToken
+        ),
+        requestToken(
+          plugin,
+          {
+            issuer: provider.issuer,
+            clientId: 'mockclientid',
+            requestScopes: [],
+          },
+          undefined,
+          undefined,
+          result1.refreshToken
+        ),
+      ]);
+      expect(result1.accessToken).not.to.equal(result2.accessToken);
+      expect(result1.refreshToken).not.to.equal(result2.refreshToken);
+      expect(result2).to.deep.equal(result3);
     });
   });
 
