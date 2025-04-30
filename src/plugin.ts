@@ -151,7 +151,7 @@ function tokenExpiryInSeconds(
       tokenSet.claims?.().exp) ||
     tokenSet.expires_at ||
     0;
-  return Math.max(0, (expiresAt ?? 0) - Date.now() / 1000);
+  return Math.max(0, (expiresAt ?? 0) - now / 1000);
 }
 
 /** @internal Exported for testing only */
