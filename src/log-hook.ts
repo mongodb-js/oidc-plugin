@@ -241,7 +241,15 @@ export function hookLoggerToMongoLogWriter(
 
   emitter.on(
     'mongodb-oidc-plugin:auth-succeeded',
-    ({ tokenType, refreshToken, expiresAt, passIdTokenAsAccessToken }) => {
+    ({
+      tokenType,
+      refreshToken,
+      expiresAt,
+      passIdTokenAsAccessToken,
+      forceRefreshOrReauth,
+      willRetryWithForceRefreshOrReauth,
+      tokenSetId,
+    }) => {
       log.info(
         'OIDC-PLUGIN',
         mongoLogId(1_002_000_017),
@@ -252,6 +260,9 @@ export function hookLoggerToMongoLogWriter(
           refreshToken,
           expiresAt,
           passIdTokenAsAccessToken,
+          forceRefreshOrReauth,
+          willRetryWithForceRefreshOrReauth,
+          tokenSetId,
         }
       );
     }

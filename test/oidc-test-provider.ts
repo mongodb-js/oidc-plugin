@@ -335,10 +335,18 @@ export async function functioningAuthCodeBrowserFlow({
     await ensureValue(browser, 'input[name="login"]', 'testuser');
     await ensureValue(browser, 'input[name="password"]', 'testpassword');
     await browser.$('button[type="submit"]').click();
+    const idpUrl = await browser.getUrl();
 
     await waitForTitle(browser, 'Authorize');
     await browser.$('button[type="submit"][autofocus]').click();
-    await waitForLocalhostRedirect(browser);
+
+    // Cannot use `waitForLocalhostRedirect` because we already started on localhost
+    await browser.waitUntil(async () => {
+      return (
+        new URL((await browser?.getUrl()) ?? 'http://nonexistent').host !==
+        new URL(idpUrl).host
+      );
+    });
   } catch (err: unknown) {
     await dumpHtml(browser);
     throw err;
@@ -385,6 +393,7 @@ export async function functioningDeviceAuthBrowserFlow({
 
     await waitForTitle(browser, 'Authorize');
     await browser.$('button[type="submit"][autofocus]').click();
+    await waitForTitle(browser, 'Sign-in Success');
   } catch (err: unknown) {
     await dumpHtml(browser);
     throw err;

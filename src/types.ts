@@ -5,6 +5,7 @@ export interface MongoDBOIDCLogEventsMap {
   }) => void;
   'mongodb-oidc-plugin:state-updated': (event: {
     updateId: number;
+    tokenSetId: string;
     timerDuration: number | undefined;
   }) => void;
   'mongodb-oidc-plugin:local-redirect-accessed': (event: {
@@ -82,6 +83,12 @@ export interface MongoDBOIDCLogEventsMap {
       idToken: string | undefined;
       refreshToken: string | undefined;
     };
+    forceRefreshOrReauth: boolean;
+    willRetryWithForceRefreshOrReauth: boolean;
+    tokenSetId: string;
+  }) => void;
+  'mongodb-oidc-plugin:discarding-token-set': (event: {
+    tokenSetId: string;
   }) => void;
   'mongodb-oidc-plugin:destroyed': () => void;
   'mongodb-oidc-plugin:missing-id-token': () => void;

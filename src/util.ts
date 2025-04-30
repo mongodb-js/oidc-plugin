@@ -1,3 +1,4 @@
+import type { TokenSet } from 'openid-client';
 import type { OIDCAbortSignal } from './types';
 import { createHash, randomBytes } from 'crypto';
 
@@ -134,4 +135,21 @@ export function getRefreshTokenId(
   return (
     'debugid:' + createHash('sha256').update(salt).update(token).digest('hex')
   );
+}
+
+// Identify a token set based on a hash of its contents
+export function getStableTokenSetId(tokenSet: TokenSet): string {
+  const { access_token, id_token, refresh_token, token_type, expires_at } =
+    tokenSet;
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        access_token,
+        id_token,
+        refresh_token,
+        token_type,
+        expires_at,
+      })
+    )
+    .digest('hex');
 }
