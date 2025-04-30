@@ -30,6 +30,14 @@ async function fetchBrowser({ url }: OpenBrowserOptions): Promise<void> {
   (await fetch(url)).body?.resume();
 }
 
+function filterConnectionStatus(
+  status: Record<string, unknown>
+): Record<string, unknown> {
+  // 8.1.0-rc0+ (SERVER-91936) adds and UUID to the response
+  const { ok, authInfo } = { ...status };
+  return { ok, authInfo };
+}
+
 describe('integration test with mongod', function () {
   this.timeout(90_000);
 
@@ -109,7 +117,7 @@ describe('integration test with mongod', function () {
         const status = await client
           .db('admin')
           .command({ connectionStatus: 1 });
-        expect(status).to.deep.equal({
+        expect(filterConnectionStatus(status)).to.deep.equal({
           ok: 1,
           authInfo: {
             authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
@@ -184,7 +192,7 @@ describe('integration test with mongod', function () {
         const status = await client
           .db('admin')
           .command({ connectionStatus: 1 });
-        expect(status).to.deep.equal({
+        expect(filterConnectionStatus(status)).to.deep.equal({
           ok: 1,
           authInfo: {
             authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
@@ -210,7 +218,7 @@ describe('integration test with mongod', function () {
         const status = await client
           .db('admin')
           .command({ connectionStatus: 1 });
-        expect(status).to.deep.equal({
+        expect(filterConnectionStatus(status)).to.deep.equal({
           ok: 1,
           authInfo: {
             authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
@@ -234,8 +242,7 @@ describe('integration test with mongod', function () {
         const status = await client
           .db('admin')
           .command({ connectionStatus: 1 });
-        delete status.uuid; // 8.1.0-rc0+ (SERVER-91936) adds and UUID to the response
-        expect(status).to.deep.equal({
+        expect(filterConnectionStatus(status)).to.deep.equal({
           ok: 1,
           authInfo: {
             authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
@@ -271,7 +278,7 @@ describe('integration test with mongod', function () {
         const status = await client
           .db('admin')
           .command({ connectionStatus: 1 });
-        expect(status).to.deep.equal({
+        expect(filterConnectionStatus(status)).to.deep.equal({
           ok: 1,
           authInfo: {
             authenticatedUsers: [{ user: 'dev/testuser', db: '$external' }],
