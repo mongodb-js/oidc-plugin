@@ -928,7 +928,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const tokenSetId = getStableTokenSetId(state.currentTokenSet.set);
 
     // We would not want to return the access token or ID token of a token set whose
-    // accompanying refresh token was passed to us by
+    // accompanying refresh token was passed to us by the driver
     const willRetryWithForceRefreshOrReauth =
       !forceRefreshOrReauth &&
       !!state.discardingTokenSets?.includes(tokenSetId);

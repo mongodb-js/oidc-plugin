@@ -137,6 +137,7 @@ export function getRefreshTokenId(
   );
 }
 
+// Identify a token set based on a hash of its contents
 export function getStableTokenSetId(tokenSet: TokenSet): string {
   const { access_token, id_token, refresh_token, token_type, expires_at } =
     tokenSet;
