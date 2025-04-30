@@ -138,7 +138,8 @@ type TokenSetExpiryInfo = Pick<
 
 function tokenExpiryInSeconds(
   tokenSet: TokenSetExpiryInfo = {},
-  passIdTokenAsAccessToken = false
+  passIdTokenAsAccessToken = false,
+  now = Date.now()
 ): number {
   // If we have an ID token and are supposed to use it, its `exp` claim
   // specifies the token expiry. Otherwise, we assume that the `expires_at`
@@ -156,9 +157,14 @@ function tokenExpiryInSeconds(
 /** @internal Exported for testing only */
 export function automaticRefreshTimeoutMS(
   tokenSet: TokenSetExpiryInfo,
-  passIdTokenAsAccessToken = false
+  passIdTokenAsAccessToken = false,
+  now = Date.now()
 ): number | undefined {
-  const expiresIn = tokenExpiryInSeconds(tokenSet, passIdTokenAsAccessToken);
+  const expiresIn = tokenExpiryInSeconds(
+    tokenSet,
+    passIdTokenAsAccessToken,
+    now
+  );
   if (!tokenSet.refresh_token || !expiresIn) return;
 
   // If the tokens expire in more than 1 minute, automatically register
