@@ -234,6 +234,7 @@ describe('integration test with mongod', function () {
         const status = await client
           .db('admin')
           .command({ connectionStatus: 1 });
+        delete status.uuid; // 8.1.0-rc0+ (SERVER-91936) adds and UUID to the response
         expect(status).to.deep.equal({
           ok: 1,
           authInfo: {
