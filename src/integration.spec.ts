@@ -34,7 +34,7 @@ function filterConnectionStatus(
   status: Record<string, unknown>
 ): Record<string, unknown> {
   // 8.1.0-rc0+ (SERVER-91936) adds and UUID to the response
-  const { ok, authInfo } = { ...status };
+  const { ok, authInfo } = status;
   return { ok, authInfo };
 }
 
