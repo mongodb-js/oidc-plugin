@@ -57,7 +57,6 @@ interface UserOIDCAuthState {
   // A Promise that resolves when the current authentication attempt
   // is finished, if there is one at the moment.
   currentAuthAttempt: Promise<IdPServerResponse> | null;
-  currentAuthAttemptId: string | null;
   // The last set of OIDC tokens we have received together with a
   // callback to refresh it and the client used to obtain it, if available.
   currentTokenSet: {
@@ -247,7 +246,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         const state: UserOIDCAuthState = {
           serverOIDCMetadata: { ...serializedState.serverOIDCMetadata },
           currentAuthAttempt: null,
-          currentAuthAttemptId: null,
           currentTokenSet: null,
           lastIdTokenClaims: serializedState.lastIdTokenClaims
             ? { ...serializedState.lastIdTokenClaims }
@@ -285,7 +283,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
               currentTokenSet: {
                 set: { ...state.currentTokenSet?.set },
               },
-              currentAuthAttemptId: state.currentAuthAttemptId,
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }
                 : undefined,
@@ -348,7 +345,6 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const newState: UserOIDCAuthState = {
       serverOIDCMetadata: serverMetadata,
       currentAuthAttempt: null,
-      currentAuthAttemptId: null,
       currentTokenSet: null,
     };
     this.mapIdpToAuthState.set(key, newState);
@@ -1025,13 +1021,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       );
       try {
         state.currentAuthAttempt = newAuthAttempt;
-        state.currentAuthAttemptId = `${Date.now()}`; // TODO req id typing.
         return await newAuthAttempt;
       } finally {
-        if (state.currentAuthAttempt === newAuthAttempt) {
+        if (state.currentAuthAttempt === newAuthAttempt)
           state.currentAuthAttempt = null;
-          state.currentAuthAttemptId = null;
-        }
       }
     } finally {
       if (params.refreshToken) {
