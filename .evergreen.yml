@@ -14,7 +14,7 @@ functions:
           set -e
           set -x
 
-          export NODE_VERSION=16.19.0
+          export NODE_VERSION=22.15.1
           bash .evergreen/install-node.sh
   install:
     - command: shell.exec
