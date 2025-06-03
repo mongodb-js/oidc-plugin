@@ -227,7 +227,7 @@ async function spawnBrowser(
           ...options.capabilities,
           'goog:chromeOptions': {
             binary: electronPath,
-            args: [`--app=${url}`, '--'],
+            args: ['--guest', `--app=${url}`, '--'],
           },
         },
       });
