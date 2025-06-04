@@ -51,8 +51,8 @@ type LastIdTokenClaims =
   | { noIdToken: true };
 
 interface UserOIDCAuthState {
-  // The unique ID for this state. This is useful for our
-  // telemetry and debugging purposes.
+  // The ID for this state. This is useful for tracing in
+  // debugging and logs purposes.
   id: string;
   // The information that the driver forwarded to us from the server
   // about the OIDC Identity Provider config.
@@ -183,7 +183,7 @@ export function automaticRefreshTimeoutMS(
 
 let authStateIdCounter = 0;
 function createOIDCAuthStateId(): string {
-  // Use a random ID for the OIDC auth state, so that we can distinguish
+  // Use an ID for the OIDC auth state, so that we can distinguish
   // between different auth states in logs.
   return `${Date.now().toString(32)}-${authStateIdCounter++}`;
 }
