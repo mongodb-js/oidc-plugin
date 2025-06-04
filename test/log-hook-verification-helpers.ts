@@ -116,7 +116,14 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
   ] as const) {
     const found = entries.find(({ id }) => expected.id === id);
     expect(found).to.exist;
-    const { attr: foundAttr, ...foundProps } = found;
+    const {
+      attr: {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        _authStateId,
+        ...foundAttr
+      },
+      ...foundProps
+    } = found;
     const { attr: expectedAttr, ...expectedProps } = expected;
     expect(foundProps).to.deep.equal(expectedProps);
     if (typeof expectedAttr === 'function') {
