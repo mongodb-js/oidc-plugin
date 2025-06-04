@@ -227,7 +227,11 @@ async function spawnBrowser(
           ...options.capabilities,
           'goog:chromeOptions': {
             binary: electronPath,
-            args: [`--app=${url}`, '--'],
+            args: [`--app=${url}`, '--disable-save-password-bubble', '--'],
+            prefs: {
+              'profile.password_manager_enabled': false,
+              credentials_enable_service: false,
+            },
           },
         },
       });
