@@ -119,7 +119,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
     const {
       attr: {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        _authStateId,
+        authStateId,
         ...foundAttr
       },
       ...foundProps
