@@ -122,7 +122,7 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
     if (typeof expectedAttr === 'function') {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       expectedAttr(foundAttr);
-    } else if (foundAttr && foundAttr.authStateId) {
+    } else if (foundAttr) {
       const {
         // Omit the authStateId from the expected attributes as its conditional.
         // eslint-disable-next-line @typescript-eslint/no-unused-vars

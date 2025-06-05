@@ -687,27 +687,19 @@ describe('OIDC plugin (local OIDC provider)', function () {
         'mongodb-oidc-plugin:auth-attempt-failed',
         'mongodb-oidc-plugin:auth-attempt-succeeded',
       ]) {
-        logger.on(event, (data) =>
-          events.push([
-            event,
-            {
-              ...data,
-              authStateId: data.authStateId.split('-')[1],
-            },
-          ])
-        );
+        logger.on(event, (data) => events.push([event, data]));
       }
       await requestToken(plugin, provider.getMongodbOIDCDBInfo());
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:auth-attempt-started',
-        { flow: 'auth-code', authStateId: '1' },
+        { flow: 'auth-code', authStateId: '0' },
       ]);
       expect(events.map((e) => e[0])).to.include(
         'mongodb-oidc-plugin:auth-attempt-failed'
       );
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:auth-attempt-started',
-        { flow: 'device-auth', authStateId: '1' },
+        { flow: 'device-auth', authStateId: '0' },
       ]);
       expect(events.map((e) => e[0])).to.include(
         'mongodb-oidc-plugin:auth-attempt-succeeded'
