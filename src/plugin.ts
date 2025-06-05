@@ -181,15 +181,9 @@ export function automaticRefreshTimeoutMS(
   }
 }
 
-let authStateIdCounter = 0;
-function createOIDCAuthStateId(): string {
-  // Use an ID for the OIDC auth state, so that we can distinguish
-  // between different auth states in logs.
-  return `${Date.now().toString(32)}-${authStateIdCounter++}`;
-}
-
 const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
 let updateIdCounter = 0;
+let authStateIdCounter = 0;
 
 function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
   return promise.catch((err) => {
@@ -229,6 +223,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
   }
 
+  /** @internal Public for testing only. */
+  public static createOIDCAuthStateId(): string {
+    // Use an ID for the OIDC auth state, so that we can distinguish
+    // between different auth states in logs.
+    return `${Date.now().toString(32)}-${authStateIdCounter++}`;
+  }
+
   private _deserialize(serialized: string) {
     try {
       let original: ReturnType<typeof this._serialize>;
@@ -254,7 +255,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
       for (const [key, serializedState] of original.state) {
         const state: UserOIDCAuthState = {
-          id: serializedState.id ?? createOIDCAuthStateId(),
+          id:
+            serializedState.id ?? MongoDBOIDCPluginImpl.createOIDCAuthStateId(),
           serverOIDCMetadata: { ...serializedState.serverOIDCMetadata },
           currentAuthAttempt: null,
           currentTokenSet: null,
@@ -356,7 +358,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     if (existing) return existing;
     const newState: UserOIDCAuthState = {
       serverOIDCMetadata: serverMetadata,
-      id: createOIDCAuthStateId(),
+      id: MongoDBOIDCPluginImpl.createOIDCAuthStateId(),
       currentAuthAttempt: null,
       currentTokenSet: null,
     };

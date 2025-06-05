@@ -25,7 +25,7 @@ import {
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
-import { automaticRefreshTimeoutMS } from './plugin';
+import { automaticRefreshTimeoutMS, MongoDBOIDCPluginImpl } from './plugin';
 import sinon from 'sinon';
 import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 import type { Server as HTTPServer } from 'http';
@@ -92,15 +92,6 @@ function testAuthCodeFlow(
   }
 }
 
-function withoutDateNowInAuthStateIdEvents<T extends { authStateId: string }>(
-  events: T[]
-): T[] {
-  return events.map((event) => ({
-    ...event,
-    authStateId: event.authStateId.split('-')[1],
-  }));
-}
-
 describe('OIDC plugin (local OIDC provider)', function () {
   this.timeout(90_000);
 
@@ -113,6 +104,12 @@ describe('OIDC plugin (local OIDC provider)', function () {
   let defaultOpts: MongoDBOIDCPluginOptions;
 
   beforeEach(async function () {
+    let stateIdCounter = 0;
+    sinon.replace(
+      MongoDBOIDCPluginImpl,
+      'createOIDCAuthStateId',
+      sinon.fake(() => `${stateIdCounter++}`)
+    );
     provider = await OIDCTestProvider.create();
     logger = new EventEmitter();
     const logStream = new PassThrough();
@@ -145,6 +142,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   });
 
   afterEach(async function () {
+    sinon.restore();
     await provider.close();
     if (originalElectronRunAsNode !== undefined)
       process.env.ELECTRON_RUN_AS_NODE = originalElectronRunAsNode;
@@ -213,9 +211,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         provider.getMongodbOIDCDBInfo()
       );
       expect(result1).to.deep.equal(result2);
-      expect(
-        withoutDateNowInAuthStateIdEvents(await skipAuthAttemptEvent)
-      ).to.deep.equal([{ reason: 'not-expired', authStateId: '0' }]);
+      expect(await skipAuthAttemptEvent).to.deep.equal([
+        { reason: 'not-expired', authStateId: '0' },
+      ]);
     });
 
     it('can optionally use id tokens instead of access tokens', async function () {
@@ -257,9 +255,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(getJWTContents(result1.accessToken).sub).to.equal(
         getJWTContents(result2.accessToken).sub
       );
-      expect(
-        withoutDateNowInAuthStateIdEvents(await skipAuthAttemptEvent)
-      ).to.deep.equal([{ authStateId: '0', reason: 'refresh-succeeded' }]);
+      expect(await skipAuthAttemptEvent).to.deep.equal([
+        { authStateId: '0', reason: 'refresh-succeeded' },
+      ]);
     });
 
     it('will fall back to a full re-auth if the refresh token is outdated', async function () {
@@ -283,11 +281,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(getJWTContents(result1.accessToken).sub).to.equal(
         getJWTContents(result2.accessToken).sub
       );
-      expect(
-        withoutDateNowInAuthStateIdEvents(
-          startedAuthAttempts as { authStateId: string }[]
-        )
-      ).to.deep.equal([
+      expect(startedAuthAttempts as { authStateId: string }[]).to.deep.equal([
         { authStateId: '0', flow: 'auth-code' },
         { authStateId: '0', flow: 'auth-code' },
       ]);
@@ -373,9 +367,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
           getJWTContents(result2.accessToken).sub
         );
 
-        expect(
-          withoutDateNowInAuthStateIdEvents(await skipEvent)
-        ).to.deep.equal([{ reason: 'not-expired', authStateId: '1' }]);
+        expect(await skipEvent).to.deep.equal([
+          { reason: 'not-expired', authStateId: '0' },
+        ]);
       });
 
       it('clears token refresh timers on destroy', async function () {
@@ -443,9 +437,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
           provider.getMongodbOIDCDBInfo()
         );
         expect(result1).to.deep.equal(result2);
-        expect(
-          withoutDateNowInAuthStateIdEvents(await skipAuthAttemptEvent)
-        ).to.deep.equal([{ reason: 'not-expired', authStateId: '0' }]);
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'not-expired', authStateId: '0' },
+        ]);
       });
 
       it('can use refresh tokens from the serialized state', async function () {
@@ -470,9 +464,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(getJWTContents(result1.accessToken).sub).to.equal(
           getJWTContents(result2.accessToken).sub
         );
-        expect(
-          withoutDateNowInAuthStateIdEvents(await skipAuthAttemptEvent)
-        ).to.deep.equal([{ reason: 'refresh-succeeded', authStateId: '1' }]);
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'refresh-succeeded', authStateId: '0' },
+        ]);
       });
 
       it('rejects invalid serialized state', async function () {
@@ -534,9 +528,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         provider.accessTokenTTLSeconds = 1;
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
-        expect(
-          withoutDateNowInAuthStateIdEvents(await skipAuthAttemptEvent)
-        ).to.deep.equal([{ reason: 'refresh-succeeded', authStateId: '1' }]);
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'refresh-succeeded', authStateId: '0' },
+        ]);
         expect(pluginOptions.allowedFlows).to.have.been.calledOnce;
       });
 
@@ -551,11 +545,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         await delay(1000);
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
-        expect(
-          withoutDateNowInAuthStateIdEvents(
-            startedAuthAttempts as { authStateId: string }[]
-          )
-        ).to.deep.equal([
+        expect(startedAuthAttempts as { authStateId: string }[]).to.deep.equal([
           { flow: 'auth-code', authStateId: '0' },
           { flow: 'auth-code', authStateId: '0' },
         ]);

@@ -116,19 +116,20 @@ export function verifySuccessfulAuthCodeFlowLog(entries: any[]): void {
   ] as const) {
     const found = entries.find(({ id }) => expected.id === id);
     expect(found).to.exist;
-    const {
-      attr: {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        authStateId,
-        ...foundAttr
-      },
-      ...foundProps
-    } = found;
+    const { attr: foundAttr, ...foundProps } = found;
     const { attr: expectedAttr, ...expectedProps } = expected;
     expect(foundProps).to.deep.equal(expectedProps);
     if (typeof expectedAttr === 'function') {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       expectedAttr(foundAttr);
+    } else if (foundAttr && foundAttr.authStateId) {
+      const {
+        // Omit the authStateId from the expected attributes as its conditional.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        authStateId,
+        ...foundAttrWithoutAuthStateId
+      } = foundAttr;
+      expect(foundAttrWithoutAuthStateId).to.deep.equal(expectedAttr);
     } else {
       expect(foundAttr).to.deep.equal(expectedAttr);
     }
