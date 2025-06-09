@@ -106,11 +106,19 @@ export interface MongoDBOIDCLogEventsMap {
     authStateId: string;
     isCurrentAuthAttemptSet: boolean;
     tokenSetId: string | undefined;
+    username: string | undefined;
+    issuer: string;
+    clientId: string;
+    requestScopes: string[] | undefined;
   }) => void;
   'mongodb-oidc-plugin:request-token-ended': (event: {
     authStateId: string;
     isCurrentAuthAttemptSet: boolean;
     tokenSetId: string | undefined;
+    username: string | undefined;
+    issuer: string;
+    clientId: string;
+    requestScopes: string[] | undefined;
   }) => void;
   'mongodb-oidc-plugin:discarding-token-set': (event: {
     tokenSetId: string;

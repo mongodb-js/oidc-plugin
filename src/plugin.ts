@@ -1032,6 +1032,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       authStateId: state.id,
       isCurrentAuthAttemptSet: !!state.currentAuthAttempt,
       tokenSetId: params.refreshToken,
+      username: state.serverOIDCMetadata.username,
+      issuer: state.serverOIDCMetadata.issuer,
+      clientId: state.serverOIDCMetadata.clientId,
+      requestScopes: state.serverOIDCMetadata.requestScopes,
     });
 
     // If the driver called us with a refresh token, that means that its corresponding
@@ -1064,6 +1068,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         authStateId: state.id,
         isCurrentAuthAttemptSet: !!state.currentAuthAttempt,
         tokenSetId: params.refreshToken,
+        username: state.serverOIDCMetadata.username,
+        issuer: state.serverOIDCMetadata.issuer,
+        clientId: state.serverOIDCMetadata.clientId,
+        requestScopes: state.serverOIDCMetadata.requestScopes,
       });
       if (params.refreshToken) {
         const index =
