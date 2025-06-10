@@ -50,9 +50,17 @@ export interface MongoDBOIDCLogEventsMap {
   }) => void;
   'mongodb-oidc-plugin:open-browser-complete': () => void;
   'mongodb-oidc-plugin:notify-device-flow': () => void;
-  'mongodb-oidc-plugin:auth-attempt-started': (event: { flow: string }) => void;
-  'mongodb-oidc-plugin:auth-attempt-succeeded': () => void;
-  'mongodb-oidc-plugin:auth-attempt-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:auth-attempt-started': (event: {
+    authStateId: string;
+    flow: string;
+  }) => void;
+  'mongodb-oidc-plugin:auth-attempt-succeeded': (event: {
+    authStateId: string;
+  }) => void;
+  'mongodb-oidc-plugin:auth-attempt-failed': (event: {
+    authStateId: string;
+    error: string;
+  }) => void;
   'mongodb-oidc-plugin:refresh-skipped': (event: {
     triggeringUpdateId: number;
     expectedRefreshToken: string | null;
@@ -71,9 +79,16 @@ export interface MongoDBOIDCLogEventsMap {
     triggeringUpdateId: number;
     refreshToken: string | null;
   }) => void;
-  'mongodb-oidc-plugin:skip-auth-attempt': (event: { reason: string }) => void;
-  'mongodb-oidc-plugin:auth-failed': (event: { error: string }) => void;
+  'mongodb-oidc-plugin:skip-auth-attempt': (event: {
+    authStateId: string;
+    reason: string;
+  }) => void;
+  'mongodb-oidc-plugin:auth-failed': (event: {
+    authStateId: string;
+    error: string;
+  }) => void;
   'mongodb-oidc-plugin:auth-succeeded': (event: {
+    authStateId: string;
     tokenType: string | null;
     refreshToken: string | null;
     expiresAt: string | null;
@@ -86,6 +101,24 @@ export interface MongoDBOIDCLogEventsMap {
     forceRefreshOrReauth: boolean;
     willRetryWithForceRefreshOrReauth: boolean;
     tokenSetId: string;
+  }) => void;
+  'mongodb-oidc-plugin:request-token-started': (event: {
+    authStateId: string;
+    isCurrentAuthAttemptSet: boolean;
+    tokenSetId: string | undefined;
+    username: string | undefined;
+    issuer: string;
+    clientId: string;
+    requestScopes: string[] | undefined;
+  }) => void;
+  'mongodb-oidc-plugin:request-token-ended': (event: {
+    authStateId: string;
+    isCurrentAuthAttemptSet: boolean;
+    tokenSetId: string | undefined;
+    username: string | undefined;
+    issuer: string;
+    clientId: string;
+    requestScopes: string[] | undefined;
   }) => void;
   'mongodb-oidc-plugin:discarding-token-set': (event: {
     tokenSetId: string;

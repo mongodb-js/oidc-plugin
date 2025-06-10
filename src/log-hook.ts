@@ -242,6 +242,7 @@ export function hookLoggerToMongoLogWriter(
   emitter.on(
     'mongodb-oidc-plugin:auth-succeeded',
     ({
+      authStateId,
       tokenType,
       refreshToken,
       expiresAt,
@@ -256,6 +257,7 @@ export function hookLoggerToMongoLogWriter(
         `${contextPrefix}-oidc`,
         'Authentication succeeded',
         {
+          authStateId,
           tokenType,
           refreshToken,
           expiresAt,
@@ -307,6 +309,36 @@ export function hookLoggerToMongoLogWriter(
       {
         ...ev,
       }
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:request-token-started', (ev) => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_029),
+      `${contextPrefix}-oidc`,
+      'Request token started',
+      { ...ev }
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:request-token-ended', (ev) => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_030),
+      `${contextPrefix}-oidc`,
+      'Request token finished',
+      { ...ev }
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:discarding-token-set', (ev) => {
+    log.info(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_031),
+      `${contextPrefix}-oidc`,
+      'Discarding token set',
+      { ...ev }
     );
   });
 

@@ -25,7 +25,7 @@ import {
 import { MongoLogWriter } from 'mongodb-log-writer';
 import { PassThrough } from 'stream';
 import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-helpers';
-import { automaticRefreshTimeoutMS } from './plugin';
+import { automaticRefreshTimeoutMS, MongoDBOIDCPluginImpl } from './plugin';
 import sinon from 'sinon';
 import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
 import type { Server as HTTPServer } from 'http';
@@ -104,6 +104,12 @@ describe('OIDC plugin (local OIDC provider)', function () {
   let defaultOpts: MongoDBOIDCPluginOptions;
 
   beforeEach(async function () {
+    let stateIdCounter = 0;
+    sinon.replace(
+      MongoDBOIDCPluginImpl,
+      'createOIDCAuthStateId',
+      sinon.fake(() => `${stateIdCounter++}`)
+    );
     provider = await OIDCTestProvider.create();
     logger = new EventEmitter();
     const logStream = new PassThrough();
@@ -136,6 +142,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
   });
 
   afterEach(async function () {
+    sinon.restore();
     await provider.close();
     if (originalElectronRunAsNode !== undefined)
       process.env.ELECTRON_RUN_AS_NODE = originalElectronRunAsNode;
@@ -205,7 +212,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       );
       expect(result1).to.deep.equal(result2);
       expect(await skipAuthAttemptEvent).to.deep.equal([
-        { reason: 'not-expired' },
+        { reason: 'not-expired', authStateId: '0' },
       ]);
     });
 
@@ -249,7 +256,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         getJWTContents(result2.accessToken).sub
       );
       expect(await skipAuthAttemptEvent).to.deep.equal([
-        { reason: 'refresh-succeeded' },
+        { authStateId: '0', reason: 'refresh-succeeded' },
       ]);
     });
 
@@ -274,9 +281,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(getJWTContents(result1.accessToken).sub).to.equal(
         getJWTContents(result2.accessToken).sub
       );
-      expect(startedAuthAttempts).to.deep.equal([
-        { flow: 'auth-code' },
-        { flow: 'auth-code' },
+      expect(startedAuthAttempts as { authStateId: string }[]).to.deep.equal([
+        { authStateId: '0', flow: 'auth-code' },
+        { authStateId: '0', flow: 'auth-code' },
       ]);
     });
 
@@ -360,7 +367,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
           getJWTContents(result2.accessToken).sub
         );
 
-        expect(await skipEvent).to.deep.equal([{ reason: 'not-expired' }]);
+        expect(await skipEvent).to.deep.equal([
+          { reason: 'not-expired', authStateId: '0' },
+        ]);
       });
 
       it('clears token refresh timers on destroy', async function () {
@@ -393,6 +402,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(Object.keys(serializedData.state[0][1]).sort()).to.deep.equal([
           'currentTokenSet',
           'discardingTokenSets',
+          'id',
           'lastIdTokenClaims',
           'serverOIDCMetadata',
         ]);
@@ -428,7 +438,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         expect(result1).to.deep.equal(result2);
         expect(await skipAuthAttemptEvent).to.deep.equal([
-          { reason: 'not-expired' },
+          { reason: 'not-expired', authStateId: '0' },
         ]);
       });
 
@@ -455,7 +465,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           getJWTContents(result2.accessToken).sub
         );
         expect(await skipAuthAttemptEvent).to.deep.equal([
-          { reason: 'refresh-succeeded' },
+          { reason: 'refresh-succeeded', authStateId: '0' },
         ]);
       });
 
@@ -519,7 +529,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         expect(await skipAuthAttemptEvent).to.deep.equal([
-          { reason: 'refresh-succeeded' },
+          { reason: 'refresh-succeeded', authStateId: '0' },
         ]);
         expect(pluginOptions.allowedFlows).to.have.been.calledOnce;
       });
@@ -535,9 +545,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         await delay(1000);
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
-        expect(startedAuthAttempts).to.deep.equal([
-          { flow: 'auth-code' },
-          { flow: 'auth-code' },
+        expect(startedAuthAttempts as { authStateId: string }[]).to.deep.equal([
+          { flow: 'auth-code', authStateId: '0' },
+          { flow: 'auth-code', authStateId: '0' },
         ]);
         expect(pluginOptions.allowedFlows).to.have.been.calledTwice;
       });
@@ -682,14 +692,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
       await requestToken(plugin, provider.getMongodbOIDCDBInfo());
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:auth-attempt-started',
-        { flow: 'auth-code' },
+        { flow: 'auth-code', authStateId: '0' },
       ]);
       expect(events.map((e) => e[0])).to.include(
         'mongodb-oidc-plugin:auth-attempt-failed'
       );
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:auth-attempt-started',
-        { flow: 'device-auth' },
+        { flow: 'device-auth', authStateId: '0' },
       ]);
       expect(events.map((e) => e[0])).to.include(
         'mongodb-oidc-plugin:auth-attempt-succeeded'
