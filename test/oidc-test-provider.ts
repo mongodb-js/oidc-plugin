@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'net';
-import type { Browser, RemoteOptions } from 'webdriverio';
+import type { Browser } from 'webdriverio';
 import { remote as webdriverIoRemote } from 'webdriverio';
 import express from 'express';
 import { createServer as createHTTPServer } from 'http';
@@ -177,12 +177,12 @@ async function spawnBrowser(
   url: string,
   hideLogs?: boolean // For when real credentials are used in a flow
 ): Promise<Browser> {
-  const options: RemoteOptions = {
+  const options = {
     capabilities: { browserName: 'chrome' },
     waitforTimeout: 10_000,
     waitforInterval: 100,
     logLevel: hideLogs ? 'error' : 'info',
-  };
+  } as const;
 
   // We set ELECTRON_RUN_AS_NODE=1 for tests so that we can use
   // process.execPath to run scripts. Here, we want the actual, regular
