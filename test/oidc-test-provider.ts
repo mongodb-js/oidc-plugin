@@ -285,7 +285,9 @@ async function waitForTitle(
   selector = 'h1'
 ): Promise<void> {
   await browser.waitUntil(async () => {
-    const actual = (await browser.$(selector).getText()).trim();
+    const element = await browser.$(selector);
+    await element.waitForDisplayed();
+    const actual = (await element.getText()).trim();
     console.log({ actual, expected, selector });
     let matches: boolean;
     if (typeof expected === 'string') {
