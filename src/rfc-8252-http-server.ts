@@ -119,7 +119,7 @@ export class RFC8252HTTPServer {
     // Success page:
     this.expressApp.get('/success/:nonce', this._handleSuccess);
     // Everything else:
-    this.expressApp.all('*', this._fallbackHandler);
+    this.expressApp.all('/*_', this._fallbackHandler);
   }
 
   private _handleSuccess: RequestHandler = (req, res, next) => {

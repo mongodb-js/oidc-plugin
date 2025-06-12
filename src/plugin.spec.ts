@@ -949,10 +949,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           {
             refresh_token: 'asdf',
             expires_at: nowS + 100,
-            id_token: '...',
-            claims() {
-              return { exp: nowS + 500 };
-            },
+            id_token_exp: nowS + 500,
           },
           true,
           nowMS
@@ -963,10 +960,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           {
             refresh_token: 'asdf',
             expires_at: nowS + 100,
-            id_token: '...',
-            claims() {
-              return { exp: nowS + 500 };
-            },
+            id_token_exp: nowS + 500,
           },
           false,
           nowMS
@@ -1054,7 +1048,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
         'jwks_uri',
       ]) {
         it(`rejects an ${endpoint} endpoint which reports non-https endpoints`, async function () {
+          const issuer = `http://localhost:${
+            (server.address() as AddressInfo).port
+          }/`;
           response = {
+            issuer,
             authorization_endpoint: 'https://somehost/',
             device_authorization_endpoint: 'https://somehost/',
             token_endpoint: 'https://somehost/',
@@ -1064,12 +1062,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
           try {
             await requestToken(plugin, {
               clientId: 'clientId',
-              issuer: `http://localhost:${
-                (server.address() as AddressInfo).port
-              }/`,
+              issuer,
             });
             expect.fail('missed exception');
           } catch (err: any) {
+            console.log(err);
             expect(err.message).to.equal(
               `Need to specify https: when accessing non-local URL 'http://somehost/' (validating: ${endpoint})`
             );

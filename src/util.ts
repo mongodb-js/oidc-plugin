@@ -1,4 +1,8 @@
-import type { TokenSet } from 'openid-client';
+import type {
+  JsonValue,
+  TokenEndpointResponse,
+  TokenEndpointResponseHelpers,
+} from 'openid-client';
 import type { OIDCAbortSignal } from './types';
 import { createHash, randomBytes } from 'crypto';
 
@@ -80,26 +84,33 @@ export function normalizeObject<T extends object>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).sort()) as T;
 }
 
+function isURL(url: unknown): url is URL {
+  return Object.prototype.toString.call(url).toLowerCase() === '[object url]';
+}
+
 // Throws if the url does not refer to an https: endpoint or a local endpoint, or null or undefined.
 export function validateSecureHTTPUrl(
-  url: unknown,
+  url: string | URL | undefined | null | JsonValue,
   diagnosticId: string
-): void {
+): 'http-allowed' | 'http-disallowed' {
   try {
     // eslint-disable-next-line eqeqeq
-    if (url == null) return;
-    if (typeof url !== 'string')
-      throw new Error(`Expected string, got ${typeof url} instead`);
-    const parsed = new URL(url);
-    if (parsed.protocol === 'https:') return;
+    if (url == null) return 'http-disallowed';
+    if (typeof url !== 'string' && !isURL(url))
+      throw new Error(
+        `Expected string or URL object, got ${typeof url} instead`
+      );
+    const parsed: URL = isURL(url) ? url : new URL(url);
+    if (parsed.protocol === 'https:') return 'http-disallowed';
     if (parsed.protocol !== 'http:') {
-      throw new Error(`Unknown protocol '${parsed.protocol}' '${url}'`);
+      throw new Error(`Unknown protocol '${parsed.protocol}' '${String(url)}'`);
     }
     if (!/^(\[::1\]|127(\.\d+){3}|localhost)$/.test(parsed.hostname)) {
       throw new Error(
-        `Need to specify https: when accessing non-local URL '${url}'`
+        `Need to specify https: when accessing non-local URL '${String(url)}'`
       );
     }
+    return 'http-allowed';
   } catch (err: unknown) {
     if (
       !err ||
@@ -137,19 +148,66 @@ export function getRefreshTokenId(
   );
 }
 
-// Identify a token set based on a hash of its contents
-export function getStableTokenSetId(tokenSet: TokenSet): string {
-  const { access_token, id_token, refresh_token, token_type, expires_at } =
-    tokenSet;
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        access_token,
-        id_token,
-        refresh_token,
-        token_type,
-        expires_at,
-      })
-    )
-    .digest('hex');
+export class TokenSet {
+  response: TokenEndpointResponse & TokenEndpointResponseHelpers;
+  expiresAt: number | undefined;
+
+  constructor(
+    response: TokenEndpointResponse & TokenEndpointResponseHelpers,
+    expiresAt?: number | undefined
+  ) {
+    this.response = response;
+    this.expiresAt =
+      expiresAt ??
+      (() => {
+        const expiresIn: number | undefined = this.response.expiresIn();
+        return expiresIn
+          ? Math.floor(Date.now() / 1000) + expiresIn
+          : undefined;
+      })();
+  }
+
+  serialize() {
+    const expiresIn: number | undefined = this.response.expiresIn();
+    const claims = this.response.claims();
+    return {
+      ...this.response,
+      claims: claims ? { ...claims } : undefined,
+      expiresAt:
+        this.expiresAt ??
+        (expiresIn ? Math.floor(Date.now() / 1000) + expiresIn : undefined),
+      expiresIn: undefined,
+    };
+  }
+
+  static fromSerialized(
+    serialized: ReturnType<(typeof TokenSet.prototype)['serialize']>
+  ): TokenSet {
+    const helpers: TokenEndpointResponseHelpers = {
+      claims: () => serialized.claims,
+      expiresIn: () =>
+        serialized.expiresAt &&
+        Math.max(0, serialized.expiresAt - Math.floor(Date.now() / 1000)),
+    };
+    return new this(
+      Object.assign({ ...serialized }, helpers),
+      serialized.expiresAt
+    );
+  }
+
+  // Identify a token set based on a hash of its contents
+  stableId(): string {
+    const { access_token, id_token, refresh_token, token_type } = this.response;
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          access_token,
+          id_token,
+          refresh_token,
+          token_type,
+          expires_at: this.expiresAt,
+        })
+      )
+      .digest('hex');
+  }
 }

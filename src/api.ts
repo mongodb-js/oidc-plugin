@@ -11,7 +11,7 @@ import type {
 } from './types';
 import type { RequestOptions } from 'https';
 
-/** @public */
+/** @public @deprecated */
 export type HttpOptions = Partial<
   Pick<
     RequestOptions,
@@ -187,6 +187,8 @@ export interface MongoDBOIDCPluginOptions {
 
   /**
    * Provide custom HTTP options for individual HTTP calls.
+   *
+   * @deprecated
    */
   customHttpOptions?:
     | HttpOptions
