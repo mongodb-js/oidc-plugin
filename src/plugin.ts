@@ -51,6 +51,9 @@ type LastIdTokenClaims =
   | { noIdToken: true };
 
 interface UserOIDCAuthState {
+  // The ID for this state. This is useful for tracing in
+  // debugging and logs purposes.
+  id: string;
   // The information that the driver forwarded to us from the server
   // about the OIDC Identity Provider config.
   serverOIDCMetadata: IdPServerInfo & Pick<OIDCCallbackParams, 'username'>;
@@ -180,6 +183,7 @@ export function automaticRefreshTimeoutMS(
 
 const kEnableFallback = Symbol.for('@@mdb.oidcplugin.kEnableFallback');
 let updateIdCounter = 0;
+let authStateIdCounter = 0;
 
 function allowFallbackIfFailed<T>(promise: Promise<T>): Promise<T> {
   return promise.catch((err) => {
@@ -219,6 +223,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
   }
 
+  /** @internal Public for testing only. */
+  public static createOIDCAuthStateId(): string {
+    // Use an ID for the OIDC auth state, so that we can distinguish
+    // between different auth states in logs.
+    return `${Date.now().toString(32)}-${authStateIdCounter++}`;
+  }
+
   private _deserialize(serialized: string) {
     try {
       let original: ReturnType<typeof this._serialize>;
@@ -244,6 +255,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
       for (const [key, serializedState] of original.state) {
         const state: UserOIDCAuthState = {
+          id:
+            serializedState.id ?? MongoDBOIDCPluginImpl.createOIDCAuthStateId(),
           serverOIDCMetadata: { ...serializedState.serverOIDCMetadata },
           currentAuthAttempt: null,
           currentTokenSet: null,
@@ -279,6 +292,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           return [
             key,
             {
+              id: state.id,
               serverOIDCMetadata: { ...state.serverOIDCMetadata },
               currentTokenSet: {
                 set: { ...state.currentTokenSet?.set },
@@ -344,6 +358,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     if (existing) return existing;
     const newState: UserOIDCAuthState = {
       serverOIDCMetadata: serverMetadata,
+      id: MongoDBOIDCPluginImpl.createOIDCAuthStateId(),
       currentAuthAttempt: null,
       currentTokenSet: null,
     };
@@ -866,12 +881,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
             5 * 60
         ) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
+            authStateId: state.id,
             reason: 'not-expired',
           });
           break get_tokens;
         }
         if (await state.currentTokenSet?.tryRefresh?.()) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
+            authStateId: state.id,
             reason: 'refresh-succeeded',
           });
           break get_tokens;
@@ -882,14 +899,18 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         if (currentAllowedFlowSet.includes('auth-code')) {
           try {
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-started', {
+              authStateId: state.id,
               flow: 'auth-code',
             });
             await this.authorizationCodeFlow(state, signal);
-            this.logger.emit('mongodb-oidc-plugin:auth-attempt-succeeded');
+            this.logger.emit('mongodb-oidc-plugin:auth-attempt-succeeded', {
+              authStateId: state.id,
+            });
             break get_tokens;
           } catch (err: unknown) {
             error = err;
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-failed', {
+              authStateId: state.id,
               error: errorString(err),
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -899,13 +920,17 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         if (currentAllowedFlowSet.includes('device-auth')) {
           try {
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-started', {
+              authStateId: state.id,
               flow: 'device-auth',
             });
             await this.deviceAuthorizationFlow(state, signal);
-            this.logger.emit('mongodb-oidc-plugin:auth-attempt-succeeded');
+            this.logger.emit('mongodb-oidc-plugin:auth-attempt-succeeded', {
+              authStateId: state.id,
+            });
             break get_tokens;
           } catch (err: unknown) {
             this.logger.emit('mongodb-oidc-plugin:auth-attempt-failed', {
+              authStateId: state.id,
               error: errorString(err),
             });
             throw err;
@@ -921,6 +946,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       }
     } catch (err: unknown) {
       this.logger.emit('mongodb-oidc-plugin:auth-failed', {
+        authStateId: state.id,
         error: errorString(err),
       });
       throw err;
@@ -940,6 +966,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       !!state.discardingTokenSets?.includes(tokenSetId);
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
+      authStateId: state.id,
       tokenType: token_type ?? null, // DPoP or Bearer
       refreshToken: getRefreshTokenId(refresh_token),
       expiresAt: expires_at ? new Date(expires_at * 1000).toISOString() : null,
@@ -1001,6 +1028,16 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       username: params.username,
     });
 
+    this.logger.emit('mongodb-oidc-plugin:request-token-started', {
+      authStateId: state.id,
+      isCurrentAuthAttemptSet: !!state.currentAuthAttempt,
+      tokenSetId: params.refreshToken,
+      username: state.serverOIDCMetadata.username,
+      issuer: state.serverOIDCMetadata.issuer,
+      clientId: state.serverOIDCMetadata.clientId,
+      requestScopes: state.serverOIDCMetadata.requestScopes,
+    });
+
     // If the driver called us with a refresh token, that means that its corresponding
     // access token has become invalid and we should always return a new one.
     if (params.refreshToken) {
@@ -1027,6 +1064,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           state.currentAuthAttempt = null;
       }
     } finally {
+      this.logger.emit('mongodb-oidc-plugin:request-token-ended', {
+        authStateId: state.id,
+        isCurrentAuthAttemptSet: !!state.currentAuthAttempt,
+        tokenSetId: params.refreshToken,
+        username: state.serverOIDCMetadata.username,
+        issuer: state.serverOIDCMetadata.issuer,
+        clientId: state.serverOIDCMetadata.clientId,
+        requestScopes: state.serverOIDCMetadata.requestScopes,
+      });
       if (params.refreshToken) {
         const index =
           state.discardingTokenSets?.indexOf(params.refreshToken) ?? -1;
