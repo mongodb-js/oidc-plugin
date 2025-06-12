@@ -84,7 +84,7 @@
     "rimraf": "^5.0.0",
     "sinon": "^15.0.3",
     "typescript": "^5.0.4",
-    "webdriverio": "^8.5.9",
+    "webdriverio": "^9.15.0",
     "xvfb-maybe": "^0.2.1"
   },
   "dependencies": {
