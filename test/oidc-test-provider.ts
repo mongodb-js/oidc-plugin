@@ -286,6 +286,7 @@ async function waitForTitle(
 ): Promise<void> {
   await browser.waitUntil(async () => {
     const actual = (await browser.$(selector).getText()).trim();
+    console.log({ actual, expected, selector });
     let matches: boolean;
     if (typeof expected === 'string') {
       matches = actual.toLowerCase() === expected.toLowerCase();
