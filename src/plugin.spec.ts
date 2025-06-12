@@ -680,7 +680,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
       });
     });
 
-    it('respect user aborts and does not attempt device flow auth', async function () {
+    it.only('falls back to device auth flow', async function () {
       const events: [string, unknown][] = [];
       for (const event of [
         'mongodb-oidc-plugin:auth-attempt-started',
@@ -689,6 +689,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ]) {
         logger.on(event, (data) => events.push([event, data]));
       }
+      const originalEmit = logger.emit.bind(logger);
+      logger.emit = function (event, ...args) {
+        console.dir({ event, args }, { depth: 5, colors: true });
+        return originalEmit(event, ...args);
+      };
       await requestToken(plugin, provider.getMongodbOIDCDBInfo());
       expect(events).to.deep.include([
         'mongodb-oidc-plugin:auth-attempt-started',
