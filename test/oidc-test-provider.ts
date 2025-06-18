@@ -285,7 +285,7 @@ async function waitForTitle(
   selector = 'h1'
 ): Promise<void> {
   await browser.waitUntil(async () => {
-    const element = await browser.$(selector);
+    const element = browser.$(selector);
     await element.waitForDisplayed();
     const actual = (await element.getText()).trim();
     let matches: boolean;
@@ -308,7 +308,7 @@ async function ensureValue(
   value: string | number,
   normalize: (value: string) => string = (value) => value
 ): Promise<void> {
-  const el = await browser.$(selector);
+  const el = browser.$(selector);
   await el.waitForDisplayed();
   await el.setValue(value);
   await browser.waitUntil(async () => {
