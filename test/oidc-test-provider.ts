@@ -367,8 +367,10 @@ export async function functioningAuthCodeBrowserFlow({
 
     // Cannot use `waitForLocalhostRedirect` because we already started on localhost
     await browser.waitUntil(async () => {
+      const currentUrl = await browser?.getUrl();
+      console.error({ currentUrl, idpUrl });
       return (
-        new URL((await browser?.getUrl()) ?? 'http://nonexistent').host !==
+        new URL(currentUrl ?? 'http://nonexistent').host !==
         new URL(idpUrl).host
       );
     });
