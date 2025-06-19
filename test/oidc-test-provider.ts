@@ -174,6 +174,11 @@ export class OIDCTestProvider {
 }
 
 let canSpawnRegularBrowser = !process.env.SKIP_REGULAR_BROWSER_TESTING;
+const electronVersion = electronToChromium(
+  process.versions.electron ??
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('electron/package.json').version
+);
 async function spawnBrowser(
   url: string,
   hideLogs?: boolean // For when real credentials are used in a flow
@@ -228,11 +233,7 @@ async function spawnBrowser(
         capabilities: {
           ...options.capabilities,
           browserName: 'chromium',
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          browserVersion: electronToChromium(
-            process.versions.electron ??
-              require('electron/package.json').version
-          ),
+          browserVersion: electronVersion,
           'goog:chromeOptions': {
             binary: electronPath,
             args: [
@@ -242,13 +243,6 @@ async function spawnBrowser(
             ],
           },
           'wdio:enforceWebDriverClassic': true,
-          'wdio:chromedriverOptions': {
-            // enable logging so we don't have to debug things blindly
-            // This goes in .log/webdriver/wdio-chromedriver-*.log. It is the
-            // chromedriver log and since this is verbose it also contains the
-            // stdout of the electron main process.
-            verbose: true,
-          } as any,
         },
       });
     } catch (err2: unknown) {
@@ -316,6 +310,7 @@ async function waitForTitle(
       return true;
     });
   } catch (err) {
+    // eslint-disable-next-line no-console
     console.error('Dumping HTML since expected title was not found:', {
       selector,
       expected,
