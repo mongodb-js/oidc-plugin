@@ -14,6 +14,7 @@ import type {
 import path from 'path';
 import { once } from 'events';
 import type { IdPServerInfo } from '../src';
+import { electronToChromium } from 'electron-to-chromium';
 
 {
   // monkey-patch the test oidc provider so that it returns 'typ: JWT'
@@ -221,18 +222,33 @@ async function spawnBrowser(
       ? process.execPath
       : ((await import('electron')).default as unknown as string);
     try {
+      // cf. https://github.com/mongodb-js/compass/blob/77568452dab0e5bb5b3fdde0a3a2a45e7d4162bd/packages/compass-e2e-tests/helpers/compass.ts#L653
       browser = await webdriverIoRemote({
         ...options,
         capabilities: {
           ...options.capabilities,
+          browserName: 'chromium',
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          browserVersion: electronToChromium(
+            process.versions.electron ??
+              require('electron/package.json').version
+          ),
           'goog:chromeOptions': {
             binary: electronPath,
-            args: [`--app=${url}`, '--disable-save-password-bubble', '--'],
-            prefs: {
-              'profile.password_manager_enabled': false,
-              credentials_enable_service: false,
-            },
+            args: [
+              `--app=${url}`,
+              '--disable-save-password-bubble',
+              '--no-sandbox',
+            ],
           },
+          'wdio:enforceWebDriverClassic': true,
+          'wdio:chromedriverOptions': {
+            // enable logging so we don't have to debug things blindly
+            // This goes in .log/webdriver/wdio-chromedriver-*.log. It is the
+            // chromedriver log and since this is verbose it also contains the
+            // stdout of the electron main process.
+            verbose: true,
+          } as any,
         },
       });
     } catch (err2: unknown) {
@@ -284,22 +300,30 @@ async function waitForTitle(
   expected: string | RegExp,
   selector = 'h1'
 ): Promise<void> {
-  await browser.waitUntil(async () => {
-    const element = browser.$(selector);
-    await element.waitForDisplayed();
-    const actual = (await element.getText()).trim();
-    let matches: boolean;
-    if (typeof expected === 'string') {
-      matches = actual.toLowerCase() === expected.toLowerCase();
-    } else {
-      matches = expected.test(actual);
-    }
+  try {
+    await browser.waitUntil(async () => {
+      const actual = (await browser.$(selector).getText()).trim();
+      let matches: boolean;
+      if (typeof expected === 'string') {
+        matches = actual.toLowerCase() === expected.toLowerCase();
+      } else {
+        matches = expected.test(actual);
+      }
 
-    if (!matches) {
-      throw new Error(`Wanted title "${String(expected)}", saw "${actual}"`);
-    }
-    return true;
-  });
+      if (!matches) {
+        throw new Error(`Wanted title "${String(expected)}", saw "${actual}"`);
+      }
+      return true;
+    });
+  } catch (err) {
+    console.error('Dumping HTML since expected title was not found:', {
+      selector,
+      expected,
+      err,
+    });
+    await dumpHtml(browser);
+    throw err;
+  }
 }
 
 async function ensureValue(
