@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'net';
-import type { Browser, RemoteOptions } from 'webdriverio';
+import type { Browser } from 'webdriverio';
 import { remote as webdriverIoRemote } from 'webdriverio';
 import express from 'express';
 import { createServer as createHTTPServer } from 'http';
@@ -14,6 +14,7 @@ import type {
 import path from 'path';
 import { once } from 'events';
 import type { IdPServerInfo } from '../src';
+import { electronToChromium } from 'electron-to-chromium';
 
 {
   // monkey-patch the test oidc provider so that it returns 'typ: JWT'
@@ -173,16 +174,21 @@ export class OIDCTestProvider {
 }
 
 let canSpawnRegularBrowser = !process.env.SKIP_REGULAR_BROWSER_TESTING;
+const electronVersion = electronToChromium(
+  process.versions.electron ??
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('electron/package.json').version
+);
 async function spawnBrowser(
   url: string,
   hideLogs?: boolean // For when real credentials are used in a flow
 ): Promise<Browser> {
-  const options: RemoteOptions = {
+  const options = {
     capabilities: { browserName: 'chrome' },
     waitforTimeout: 10_000,
     waitforInterval: 100,
     logLevel: hideLogs ? 'error' : 'info',
-  };
+  } as const;
 
   // We set ELECTRON_RUN_AS_NODE=1 for tests so that we can use
   // process.execPath to run scripts. Here, we want the actual, regular
@@ -221,18 +227,22 @@ async function spawnBrowser(
       ? process.execPath
       : ((await import('electron')).default as unknown as string);
     try {
+      // cf. https://github.com/mongodb-js/compass/blob/77568452dab0e5bb5b3fdde0a3a2a45e7d4162bd/packages/compass-e2e-tests/helpers/compass.ts#L653
       browser = await webdriverIoRemote({
         ...options,
         capabilities: {
           ...options.capabilities,
+          browserName: 'chromium',
+          browserVersion: electronVersion,
           'goog:chromeOptions': {
             binary: electronPath,
-            args: [`--app=${url}`, '--disable-save-password-bubble', '--'],
-            prefs: {
-              'profile.password_manager_enabled': false,
-              credentials_enable_service: false,
-            },
+            args: [
+              `--app=${url}`,
+              '--disable-save-password-bubble',
+              '--no-sandbox',
+            ],
           },
+          'wdio:enforceWebDriverClassic': true,
         },
       });
     } catch (err2: unknown) {
@@ -274,6 +284,8 @@ async function dumpHtml(browser: Browser | undefined): Promise<void> {
           ])
       )
     );
+    console.error('-------- Current URL ---------');
+    console.error(await browser.getUrl());
     console.error('------------------------------');
     /* eslint-enable */
   }
@@ -284,20 +296,31 @@ async function waitForTitle(
   expected: string | RegExp,
   selector = 'h1'
 ): Promise<void> {
-  await browser.waitUntil(async () => {
-    const actual = (await browser.$(selector).getText()).trim();
-    let matches: boolean;
-    if (typeof expected === 'string') {
-      matches = actual.toLowerCase() === expected.toLowerCase();
-    } else {
-      matches = expected.test(actual);
-    }
+  try {
+    await browser.waitUntil(async () => {
+      const actual = (await browser.$(selector).getText()).trim();
+      let matches: boolean;
+      if (typeof expected === 'string') {
+        matches = actual.toLowerCase() === expected.toLowerCase();
+      } else {
+        matches = expected.test(actual);
+      }
 
-    if (!matches) {
-      throw new Error(`Wanted title "${String(expected)}", saw "${actual}"`);
-    }
-    return true;
-  });
+      if (!matches) {
+        throw new Error(`Wanted title "${String(expected)}", saw "${actual}"`);
+      }
+      return true;
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Dumping HTML since expected title was not found:', {
+      selector,
+      expected,
+      err,
+    });
+    await dumpHtml(browser);
+    throw err;
+  }
 }
 
 async function ensureValue(
@@ -306,7 +329,7 @@ async function ensureValue(
   value: string | number,
   normalize: (value: string) => string = (value) => value
 ): Promise<void> {
-  const el = await browser.$(selector);
+  const el = browser.$(selector);
   await el.waitForDisplayed();
   await el.setValue(value);
   await browser.waitUntil(async () => {
@@ -322,11 +345,18 @@ async function ensureValue(
 }
 
 async function waitForLocalhostRedirect(browser: Browser): Promise<void> {
-  await browser.waitUntil(async () => {
-    return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
-      new URL(await browser.getUrl()).hostname
-    );
-  });
+  try {
+    await browser.waitUntil(async () => {
+      return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
+        new URL(await browser.getUrl()).hostname
+      );
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to wait for localhost redirect:', err);
+    await dumpHtml(browser);
+    throw err;
+  }
 }
 
 export async function functioningAuthCodeBrowserFlow({
