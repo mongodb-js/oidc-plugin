@@ -284,6 +284,8 @@ async function dumpHtml(browser: Browser | undefined): Promise<void> {
           ])
       )
     );
+    console.error('-------- Current URL ---------');
+    console.error(await browser.getUrl());
     console.error('------------------------------');
     /* eslint-enable */
   }
@@ -343,11 +345,18 @@ async function ensureValue(
 }
 
 async function waitForLocalhostRedirect(browser: Browser): Promise<void> {
-  await browser.waitUntil(async () => {
-    return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
-      new URL(await browser.getUrl()).hostname
-    );
-  });
+  try {
+    await browser.waitUntil(async () => {
+      return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
+        new URL(await browser.getUrl()).hostname
+      );
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to wait for localhost redirect:', err);
+    await dumpHtml(browser);
+    throw err;
+  }
 }
 
 export async function functioningAuthCodeBrowserFlow({
@@ -367,10 +376,8 @@ export async function functioningAuthCodeBrowserFlow({
 
     // Cannot use `waitForLocalhostRedirect` because we already started on localhost
     await browser.waitUntil(async () => {
-      const currentUrl = await browser?.getUrl();
-      console.error({ currentUrl, idpUrl });
       return (
-        new URL(currentUrl ?? 'http://nonexistent').host !==
+        new URL((await browser?.getUrl()) ?? 'http://nonexistent').host !==
         new URL(idpUrl).host
       );
     });
