@@ -346,11 +346,14 @@ async function ensureValue(
 
 async function waitForLocalhostRedirect(browser: Browser): Promise<void> {
   try {
-    await browser.waitUntil(async () => {
-      return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
-        new URL(await browser.getUrl()).hostname
-      );
-    });
+    await browser.waitUntil(
+      async () => {
+        return /^(localhost|\[::1\]|^127\.([0-9.]+)|)$/.test(
+          new URL(await browser.getUrl()).hostname
+        );
+      },
+      { timeout: 30_000 }
+    );
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('Failed to wait for localhost redirect:', err);
