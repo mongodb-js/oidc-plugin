@@ -28,6 +28,9 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-engines
       - name: Test
+        env:
+          OKTA_TEST_CREDENTIALS: ${{ secrets.OKTA_TEST_CREDENTIALS }}
+          OKTA_TEST_CONFIG: ${{ secrets.OKTA_TEST_CONFIG }}
         run: npm run test-ci
   check:
     name: Check
