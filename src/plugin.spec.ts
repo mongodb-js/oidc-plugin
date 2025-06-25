@@ -1096,6 +1096,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
         console.info('skipping Okta integration tests due to missing config');
         return this.skip();
       }
+      if (process.env.EVR_TASK_ID && process.platform === 'darwin') {
+        // TODO(MONGOSH-2335): Unskip Okta integration tests on macOS in Evergreen
+        // eslint-disable-next-line no-console
+        console.info(
+          'skipping Okta integration tests on macOS in Evergreen MONGOSH-2335'
+        );
+        return this.skip();
+      }
 
       [issuer, clientId] = JSON.parse(process.env.OKTA_TEST_CONFIG || '');
       [username, password] = JSON.parse(
