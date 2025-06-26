@@ -14,7 +14,7 @@ functions:
           set -e
           set -x
 
-          export NODE_VERSION=16.19.0
+          export NODE_VERSION=22.15.1
           bash .evergreen/install-node.sh
   install:
     - command: shell.exec
@@ -109,14 +109,14 @@ buildvariants:
       - test_electron
       - check
   - name: macos_x64_test
-    display_name: 'macOS 11.00 x64'
-    run_on: macos-11-gui
+    display_name: 'macOS 14 x64'
+    run_on: macos-14-gui
     tasks:
       - test
       - test_electron
   - name: macos_arm64_test
-    display_name: 'macOS 11.00 arm64'
-    run_on: macos-11-arm64-gui
+    display_name: 'macOS 14 arm64'
+    run_on: macos-14-arm64-gui
     tasks:
       - test
       - test_electron
