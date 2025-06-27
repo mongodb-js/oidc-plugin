@@ -1066,7 +1066,6 @@ describe('OIDC plugin (local OIDC provider)', function () {
             });
             expect.fail('missed exception');
           } catch (err: any) {
-            console.log(err);
             expect(err.message).to.equal(
               `Need to specify https: when accessing non-local URL 'http://somehost/' (validating: ${endpoint})`
             );
