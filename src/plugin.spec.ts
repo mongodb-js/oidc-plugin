@@ -1401,8 +1401,8 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     });
   });
 
-  context('HTTP request tracking', function () {
-    it('will log all outgoing HTTP requests', async function () {
+  context('HTTP request handling', function () {
+    it('will track all outgoing HTTP requests', async function () {
       const pluginHttpRequests: string[] = [];
       const localServerHttpRequests: string[] = [];
       const browserHttpRequests: string[] = [];
@@ -1454,6 +1454,44 @@ describe('OIDC plugin (mock OIDC provider)', function () {
         .map(removeSearchParams)
         .sort();
       expect(allOutboundRequests).to.deep.equal(allInboundRequests);
+    });
+
+    it('allows node-fetch as a custom HTTP fetch client', async function () {
+      const customFetch: typeof fetch = sinon.stub().callsFake(fetch);
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+        customFetch,
+      });
+      const result = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      expect(result.accessToken).to.be.a('string');
+      expect(customFetch).to.have.been.called;
+    });
+
+    it('allows global Node.js fetch as a custom HTTP fetch client', async function () {
+      const customFetch: typeof globalThis.fetch = sinon
+        .stub()
+        .callsFake(globalThis.fetch);
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+        customFetch,
+      });
+      const result = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      expect(result.accessToken).to.be.a('string');
+      expect(customFetch).to.have.been.called;
     });
   });
 });

@@ -397,6 +397,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
   fetch: CustomFetch = async (url, init) => {
     this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
+
+    if (this.options.customFetch) {
+      return await this.options.customFetch(url, init);
+    }
+
     const options =
       typeof this.options.customHttpOptions === 'function'
         ? this.options.customHttpOptions(url, {})
@@ -474,7 +479,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         None(),
         discoveryOptions
       );
-      // XXX: ensure that fetch on `config` is the same as fetch on `discoveryOptions`
+      // NB: The fact that `customFetch` is transfered from `discoveryOptions` to `config`
+      // is tested by our unit tests when they verify that all outgoing HTTP calls are logged.
     } catch (err: unknown) {
       // openid-client just forwards the raw Node.js HTTP error, we'll want to
       // at least include the target URL here
@@ -999,7 +1005,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     const { token_type, access_token, id_token, refresh_token } =
       state.currentTokenSet.set.response;
-    const expiresIn = state.currentTokenSet.set.response.expiresIn();
+    const expiresAt = state.currentTokenSet.set.expiresAt;
     const tokenSetId = state.currentTokenSet.set.stableId();
 
     // We would not want to return the access token or ID token of a token set whose
@@ -1012,9 +1018,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       authStateId: state.id,
       tokenType: token_type ?? null, // DPoP or Bearer
       refreshToken: getRefreshTokenId(refresh_token),
-      expiresAt: expiresIn
-        ? new Date(Date.now() + expiresIn * 1000).toISOString()
-        : null,
+      expiresAt: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
       passIdTokenAsAccessToken: !!passIdTokenAsAccessToken,
       tokens: {
         accessToken: access_token,
