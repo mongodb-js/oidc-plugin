@@ -1175,6 +1175,15 @@ describe('OIDC plugin (local OIDC provider)', function () {
         return this.skip();
       }
 
+      if (process.env.EVR_TASK_ID && process.platform === 'darwin') {
+        // TODO(MONGOSH-2335): Unskip Azure integration tests on macOS in Evergreen
+        // eslint-disable-next-line no-console
+        console.info(
+          'skipping Azure integration tests on macOS in Evergreen MONGOSH-2335'
+        );
+        return this.skip();
+      }
+
       [issuer, clientId, requestScopes] = JSON.parse(
         process.env.AZURE_TEST_CONFIG || ''
       );
