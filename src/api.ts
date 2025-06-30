@@ -202,7 +202,7 @@ export interface MongoDBOIDCPluginOptions {
    *
    * Any API that is compatible with the web `fetch` API can be used here.
    */
-  customFetch?: (url: string, options: Readonly<unknown>) => Promise<unknown>;
+  customFetch?: (url: string, options: Readonly<unknown>) => Promise<Response>;
 
   /**
    * Pass ID tokens in place of access tokens. For debugging/working around

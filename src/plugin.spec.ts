@@ -346,18 +346,16 @@ describe('OIDC plugin (local OIDC provider)', function () {
         // allow for a small margin of error
         expect(timeouts[1].timeout).to.be.greaterThanOrEqual(9_600_000);
         expect(timeouts[1].timeout).to.be.lessThanOrEqual(9_800_000);
+        const logger = plugin.logger as typeof plugin.logger & EventEmitter;
         const refreshStartedEvent = once(
-          plugin.logger,
+          logger,
           'mongodb-oidc-plugin:refresh-started'
         );
         timeouts[1].fn();
         await refreshStartedEvent;
-        await once(plugin.logger, 'mongodb-oidc-plugin:refresh-succeeded');
+        await once(logger, 'mongodb-oidc-plugin:refresh-succeeded');
 
-        const skipEvent = once(
-          plugin.logger,
-          'mongodb-oidc-plugin:skip-auth-attempt'
-        );
+        const skipEvent = once(logger, 'mongodb-oidc-plugin:skip-auth-attempt');
         const result2 = await requestToken(
           plugin,
           provider.getMongodbOIDCDBInfo()
@@ -1457,7 +1455,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     });
 
     it('allows node-fetch as a custom HTTP fetch client', async function () {
-      const customFetch: typeof fetch = sinon.stub().callsFake(fetch);
+      const customFetch = sinon.stub().callsFake(fetch);
       const plugin = createMongoDBOIDCPlugin({
         openBrowserTimeout: 60_000,
         openBrowser: fetchBrowser,

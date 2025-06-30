@@ -417,12 +417,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const AgentClass =
       new URL(url).protocol === 'https:' ? HTTPSAgent : HTTPAgent;
 
-    return await fetch(url, {
+    return (await fetch(url, {
       ...init,
       agent: options?.agent ?? new AgentClass(options),
       ...options,
-      headers: { ...options?.headers } as Record<string, string>,
-    });
+      headers: { ...options?.headers },
+      // TS is not convinced that node-fetch and built-in fetch are compatible enough
+    } as Parameters<typeof fetch>[1])) as unknown as Response;
   };
 
   private async getOIDCClient(
