@@ -145,10 +145,10 @@ async function getDefaultOpenBrowser(): Promise<
 }
 
 // Trimmed-down type for easier testing
-type TokenSetExpiryInfo = {
-  refresh_token?: string;
-  id_token_exp?: number;
-  expires_at?: number;
+type TokenSetExpiryInfo = Partial<
+  Pick<TokenSet, 'refreshToken' | 'expiresAt'>
+> & {
+  idTokenClaims?: Pick<IDToken, 'exp'> | undefined;
 };
 
 function tokenExpiryInSeconds(
@@ -161,10 +161,10 @@ function tokenExpiryInSeconds(
   // value presented by the OIDC provider is correct, since OIDC clients are
   // not supposed to inspect access tokens and treat them as opaque.
   const expiresAt =
-    (tokenSet.id_token_exp !== undefined &&
+    (tokenSet.idTokenClaims?.exp !== undefined &&
       passIdTokenAsAccessToken &&
-      tokenSet.id_token_exp) ||
-    tokenSet.expires_at ||
+      tokenSet.idTokenClaims?.exp) ||
+    tokenSet.expiresAt ||
     0;
   return Math.max(0, (expiresAt ?? 0) - now / 1000);
 }
@@ -180,7 +180,7 @@ export function automaticRefreshTimeoutMS(
     passIdTokenAsAccessToken,
     now
   );
-  if (!tokenSet.refresh_token || !expiresIn) return;
+  if (!tokenSet.refreshToken || !expiresIn) return;
 
   // If the tokens expire in more than 1 minute, automatically register
   // a refresh handler. (They should not expire in less; however,
@@ -257,11 +257,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         );
       }
 
-      if (original.oidcPluginStateVersion !== 0) {
+      if (original.oidcPluginStateVersion !== 1) {
         throw new MongoDBOIDCError(
           `Stored OIDC data could not be deserialized because of a version mismatch (got ${JSON.stringify(
             original.oidcPluginStateVersion
-          )}, expected 0)`
+          )}, expected 1)`
         );
       }
 
@@ -299,7 +299,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   // Separate method so we can re-use the inferred return type in _deserialize()
   private _serialize() {
     return {
-      oidcPluginStateVersion: 0,
+      oidcPluginStateVersion: 1,
       state: [...this.mapIdpToAuthState]
         .filter(([, state]) => !!state.currentTokenSet)
         .map(([key, state]) => {
@@ -407,12 +407,23 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         ? this.options.customHttpOptions(url, {})
         : this.options.customHttpOptions;
 
+    // Same comments as in getDefaultOpenBrowser() apply regarding the import/eval fallbacks here.
     // eslint-disable-next-line @typescript-eslint/consistent-type-imports
     let fetch: typeof import('node-fetch').default;
     try {
       fetch = (await import('node-fetch')).default;
-    } catch {
-      fetch = await eval('import("node-fetch").default');
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'ERR_REQUIRE_ESM' &&
+        typeof __webpack_require__ === 'undefined'
+      ) {
+        fetch = (await eval('import("node-fetch")')).default;
+      } else {
+        throw err;
+      }
     }
     const AgentClass =
       new URL(url).protocol === 'https:' ? HTTPSAgent : HTTPAgent;
@@ -426,7 +437,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     } as Parameters<typeof fetch>[1])) as unknown as Response;
   };
 
-  private async getOIDCClient(
+  private async getOIDCClientConfiguration(
     state: UserOIDCAuthState,
     redirectURI?: string
   ): Promise<{
@@ -587,7 +598,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // then the plugin is passed to client B which requests a token, and we
     // receive mismatching tokens for different users or different audiences.
     if (
-      !tokenSet.response.id_token &&
+      !tokenSet.idToken &&
       state.lastIdTokenClaims &&
       !state.lastIdTokenClaims.noIdToken
     ) {
@@ -599,15 +610,15 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     if (
-      tokenSet.response.id_token &&
+      tokenSet.idToken &&
       state.lastIdTokenClaims &&
       state.lastIdTokenClaims.noIdToken
     ) {
       throw new MongoDBOIDCError(`Unexpected ID token received.`);
     }
 
-    if (tokenSet.response.id_token) {
-      const idTokenClaims = tokenSet.response.claims();
+    if (tokenSet.idToken) {
+      const idTokenClaims = tokenSet.idTokenClaims;
       if (!idTokenClaims)
         throw new MongoDBOIDCError(
           'Internal error: id_token set but claims() unavailable'
@@ -638,15 +649,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
 
-    const refreshTokenId = getRefreshTokenId(tokenSet.response.refresh_token);
+    const refreshTokenId = getRefreshTokenId(tokenSet.refreshToken);
     const updateId = updateIdCounter++;
 
     const timerDuration = automaticRefreshTimeoutMS(
-      {
-        refresh_token: tokenSet.response.refresh_token,
-        id_token_exp: tokenSet.response.claims()?.exp,
-        expires_at: tokenSet.expiresAt,
-      },
+      tokenSet,
       this.options.passIdTokenAsAccessToken
     );
     // Use `.call()` because in browsers, `setTimeout()` requires that it is called
@@ -672,7 +679,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           triggeringUpdateId: updateId,
           expectedRefreshToken: refreshTokenId,
           actualRefreshToken: getRefreshTokenId(
-            state.currentTokenSet?.set?.response?.refresh_token
+            state.currentTokenSet?.set?.refreshToken
           ),
         });
         return false;
@@ -682,12 +689,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           triggeringUpdateId: updateId,
           refreshToken: refreshTokenId,
         });
-        if (!tokenSet.response.refresh_token) return false;
+        if (!tokenSet.refreshToken) return false;
 
-        const { config } = await this.getOIDCClient(state);
+        const { config } = await this.getOIDCClientConfiguration(state);
         const refreshedTokens = await refreshTokenGrant(
           config,
-          tokenSet.response.refresh_token
+          tokenSet.refreshToken
         );
         // Check again to avoid race conditions.
         if (state.currentTokenSet?.set === tokenSet) {
@@ -763,7 +770,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         ]);
 
         actualRedirectURI = server.listeningRedirectUrl as string;
-        ({ scope, config } = await this.getOIDCClient(
+        ({ scope, config } = await this.getOIDCClientConfiguration(
           state,
           actualRedirectURI
         ));
@@ -863,7 +870,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
-    const { scope, config } = await this.getOIDCClient(state);
+    const { scope, config } = await this.getOIDCClientConfiguration(state);
 
     await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
       const deviceFlowHandle = await Promise.race([
@@ -916,12 +923,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         if (
           !forceRefreshOrReauth &&
           tokenExpiryInSeconds(
-            {
-              refresh_token:
-                state.currentTokenSet?.set?.response?.refresh_token,
-              id_token_exp: state.currentTokenSet?.set?.response?.claims()?.exp,
-              expires_at: state.currentTokenSet?.set?.expiresAt,
-            },
+            state.currentTokenSet?.set,
             passIdTokenAsAccessToken
           ) >
             5 * 60
@@ -985,12 +987,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         if (error) throw error;
       }
 
-      if (
-        passIdTokenAsAccessToken &&
-        !state.currentTokenSet?.set?.response?.id_token
-      ) {
+      if (passIdTokenAsAccessToken && !state.currentTokenSet?.set?.idToken) {
         throw new MongoDBOIDCError('Could not retrieve valid ID token');
-      } else if (!state.currentTokenSet?.set?.response?.access_token) {
+      } else if (!state.currentTokenSet?.set?.accessToken) {
         throw new MongoDBOIDCError('Could not retrieve valid access token');
       }
     } catch (err: unknown) {
@@ -1004,8 +1003,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       driverAbortSignal?.removeEventListener('abort', driverAbortCb);
     }
 
-    const { token_type, access_token, id_token, refresh_token } =
-      state.currentTokenSet.set.response;
+    const { tokenType, accessToken, idToken, refreshToken } =
+      state.currentTokenSet.set;
     const expiresAt = state.currentTokenSet.set.expiresAt;
     const tokenSetId = state.currentTokenSet.set.stableId();
 
@@ -1017,14 +1016,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
       authStateId: state.id,
-      tokenType: token_type ?? null, // DPoP or Bearer
-      refreshToken: getRefreshTokenId(refresh_token),
+      tokenType: tokenType ?? null, // DPoP or Bearer
+      refreshToken: getRefreshTokenId(refreshToken),
       expiresAt: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
       passIdTokenAsAccessToken: !!passIdTokenAsAccessToken,
       tokens: {
-        accessToken: access_token,
-        idToken: id_token,
-        refreshToken: refresh_token,
+        accessToken: accessToken,
+        idToken: idToken,
+        refreshToken: refreshToken,
       },
       tokenSetId,
       forceRefreshOrReauth,
@@ -1038,7 +1037,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     return {
-      accessToken: passIdTokenAsAccessToken ? id_token || '' : access_token,
+      accessToken: passIdTokenAsAccessToken ? idToken || '' : accessToken,
       refreshToken: tokenSetId,
       // Passing `expiresInSeconds: 0` results in the driver not caching the token.
       // We perform our own caching here inside the plugin, so interactions with the

@@ -393,7 +393,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         const serializedData = JSON.parse(
           Buffer.from(rawData, 'base64').toString('utf8')
         );
-        expect(serializedData.oidcPluginStateVersion).to.equal(0);
+        expect(serializedData.oidcPluginStateVersion).to.equal(1);
         expect(serializedData.state).to.have.lengthOf(1);
         expect(serializedData.state[0][0]).to.be.a('string');
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -413,7 +413,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         const serializedData = JSON.parse(
           Buffer.from(rawData, 'base64').toString('utf8')
         );
-        expect(serializedData.oidcPluginStateVersion).to.equal(0);
+        expect(serializedData.oidcPluginStateVersion).to.equal(1);
         expect(serializedData.state).to.have.lengthOf(1);
       });
 
@@ -919,14 +919,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
       const nowS = Date.now() / 1000;
       const nowMS = nowS * 1000;
       expect(automaticRefreshTimeoutMS({})).to.equal(undefined);
-      expect(automaticRefreshTimeoutMS({ expires_at: nowS + 10000 })).to.equal(
+      expect(automaticRefreshTimeoutMS({ expiresAt: nowS + 10000 })).to.equal(
         undefined
       );
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 10000,
+            refreshToken: 'asdf',
+            expiresAt: nowS + 10000,
           },
           undefined,
           nowMS
@@ -935,8 +935,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 100,
+            refreshToken: 'asdf',
+            expiresAt: nowS + 100,
           },
           undefined,
           nowMS
@@ -945,9 +945,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 100,
-            id_token_exp: nowS + 500,
+            refreshToken: 'asdf',
+            expiresAt: nowS + 100,
+            idTokenClaims: { exp: nowS + 500 },
           },
           true,
           nowMS
@@ -956,9 +956,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 100,
-            id_token_exp: nowS + 500,
+            refreshToken: 'asdf',
+            expiresAt: nowS + 100,
+            idTokenClaims: { exp: nowS + 500 },
           },
           false,
           nowMS
@@ -966,20 +966,20 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ).to.equal(50000);
       expect(
         automaticRefreshTimeoutMS({
-          refresh_token: 'asdf',
-          expires_at: nowS + 10,
+          refreshToken: 'asdf',
+          expiresAt: nowS + 10,
         })
       ).to.equal(undefined);
       expect(
         automaticRefreshTimeoutMS({
-          refresh_token: 'asdf',
-          expires_at: nowS + 0,
+          refreshToken: 'asdf',
+          expiresAt: nowS + 0,
         })
       ).to.equal(undefined);
       expect(
         automaticRefreshTimeoutMS({
-          refresh_token: 'asdf',
-          expires_at: nowS + -10,
+          refreshToken: 'asdf',
+          expiresAt: nowS + -10,
         })
       ).to.equal(undefined);
     });
@@ -1475,6 +1475,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     it('allows global Node.js fetch as a custom HTTP fetch client', async function () {
       const customFetch: typeof globalThis.fetch = sinon
         .stub()
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         .callsFake(globalThis.fetch);
       const plugin = createMongoDBOIDCPlugin({
         openBrowserTimeout: 60_000,

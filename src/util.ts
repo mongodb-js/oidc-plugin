@@ -1,4 +1,5 @@
 import type {
+  IDToken,
   JsonValue,
   TokenEndpointResponse,
   TokenEndpointResponseHelpers,
@@ -149,8 +150,9 @@ export function getRefreshTokenId(
 }
 
 export class TokenSet {
-  response: TokenEndpointResponse & TokenEndpointResponseHelpers;
-  expiresAt: number | undefined;
+  private readonly response: Readonly<TokenEndpointResponse> &
+    TokenEndpointResponseHelpers;
+  public readonly expiresAt: number | undefined;
 
   constructor(
     response: TokenEndpointResponse & TokenEndpointResponseHelpers,
@@ -167,6 +169,28 @@ export class TokenSet {
       })();
   }
 
+  get refreshToken(): string | undefined {
+    return this.response.refresh_token;
+  }
+
+  get accessToken(): string | undefined {
+    return this.response.access_token;
+  }
+
+  get idToken(): string | undefined {
+    return this.response.id_token;
+  }
+
+  get idTokenClaims(): IDToken | undefined {
+    return this.response.claims();
+  }
+
+  get tokenType(): TokenEndpointResponse['token_type'] {
+    return this.response.token_type;
+  }
+
+  // Explicitly expressing the return type of this function is a bit awkward,
+  // and since it is only consumed by `fromSerialized`, it's fine to leave it inferred.
   serialize() {
     const expiresIn: number | undefined = this.response.expiresIn();
     const claims = this.response.claims();
