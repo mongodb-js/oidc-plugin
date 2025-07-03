@@ -31,6 +31,8 @@ jobs:
         env:
           OKTA_TEST_CREDENTIALS: ${{ secrets.OKTA_TEST_CREDENTIALS }}
           OKTA_TEST_CONFIG: ${{ secrets.OKTA_TEST_CONFIG }}
+          AZURE_TEST_CREDENTIALS: ${{ secrets.AZURE_TEST_CREDENTIALS }}
+          AZURE_TEST_CONFIG: ${{ secrets.AZURE_TEST_CONFIG }}
         run: npm run test-ci
   check:
     name: Check

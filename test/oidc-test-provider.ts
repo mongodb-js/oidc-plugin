@@ -127,7 +127,7 @@ export class OIDCTestProvider {
     const { port } = this.httpServer.address() as AddressInfo;
 
     const app = express();
-    this.httpServer.on('request', app);
+    this.httpServer.on('request', (...args) => void app(...args));
     const oidcProvider = new OIDCProvider(`http://localhost:${port}`, {
       ...oidcProviderConfig,
       ttl: {

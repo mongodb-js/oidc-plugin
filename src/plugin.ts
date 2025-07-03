@@ -10,25 +10,15 @@ import { MongoDBOIDCError } from './types';
 import {
   errorString,
   getRefreshTokenId,
-  getStableTokenSetId,
   messageFromError,
   normalizeObject,
   throwIfAborted,
+  TokenSet,
   validateSecureHTTPUrl,
   withAbortCheck,
   withLock,
 } from './util';
-import type {
-  Client,
-  IdTokenClaims,
-  CustomHttpOptionsProvider,
-} from 'openid-client';
-import type { BaseClient } from 'openid-client';
-import { TokenSet, custom } from 'openid-client';
-import { Issuer, generators } from 'openid-client';
 import { RFC8252HTTPServer } from './rfc-8252-http-server';
-import { promisify } from 'util';
-import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 import type {
   AuthFlowType,
@@ -40,6 +30,29 @@ import type {
 } from './api';
 import { kDefaultOpenBrowserTimeout } from './api';
 import { spawn } from 'child_process';
+import type {
+  ServerMetadata as AuthorizationServerMetadata,
+  CustomFetch,
+} from 'openid-client';
+import {
+  allowInsecureRequests,
+  authorizationCodeGrant,
+  buildAuthorizationUrl,
+  calculatePKCECodeChallenge,
+  Configuration,
+  customFetch,
+  discovery,
+  initiateDeviceAuthorization,
+  None,
+  pollDeviceAuthorizationGrant,
+  randomNonce,
+  randomPKCECodeVerifier,
+  randomState,
+  refreshTokenGrant,
+  type IDToken,
+} from 'openid-client';
+import { Agent as HTTPSAgent } from 'https';
+import { Agent as HTTPAgent } from 'http';
 
 /** @internal */
 
@@ -47,7 +60,7 @@ import { spawn } from 'child_process';
 // TokenSet, if any.
 // 'no-id-token' means that the previous token set contained no ID token
 type LastIdTokenClaims =
-  | (Pick<IdTokenClaims, 'aud' | 'sub'> & { noIdToken?: never })
+  | (Pick<IDToken, 'aud' | 'sub'> & { noIdToken?: never })
   | { noIdToken: true };
 
 interface UserOIDCAuthState {
@@ -72,7 +85,7 @@ interface UserOIDCAuthState {
   lastIdTokenClaims?: LastIdTokenClaims;
   // A cached Client instance that uses the issuer metadata as discovered
   // through serverOIDCMetadata.
-  client?: Client;
+  config?: Configuration;
   // A set of refresh token IDs which are currently being rejected, i.e.
   // where the driver has called our callback indicating that the corresponding
   // access token has become invalid.
@@ -132,11 +145,10 @@ async function getDefaultOpenBrowser(): Promise<
 }
 
 // Trimmed-down type for easier testing
-type TokenSetExpiryInfo = Pick<
-  TokenSet,
-  'refresh_token' | 'id_token' | 'expires_at'
+type TokenSetExpiryInfo = Partial<
+  Pick<TokenSet, 'refreshToken' | 'expiresAt'>
 > & {
-  claims?: () => { exp: number };
+  idTokenClaims?: Pick<IDToken, 'exp'> | undefined;
 };
 
 function tokenExpiryInSeconds(
@@ -149,10 +161,10 @@ function tokenExpiryInSeconds(
   // value presented by the OIDC provider is correct, since OIDC clients are
   // not supposed to inspect access tokens and treat them as opaque.
   const expiresAt =
-    (tokenSet.id_token &&
+    (tokenSet.idTokenClaims?.exp !== undefined &&
       passIdTokenAsAccessToken &&
-      tokenSet.claims?.().exp) ||
-    tokenSet.expires_at ||
+      tokenSet.idTokenClaims?.exp) ||
+    tokenSet.expiresAt ||
     0;
   return Math.max(0, (expiresAt ?? 0) - now / 1000);
 }
@@ -168,7 +180,7 @@ export function automaticRefreshTimeoutMS(
     passIdTokenAsAccessToken,
     now
   );
-  if (!tokenSet.refresh_token || !expiresIn) return;
+  if (!tokenSet.refreshToken || !expiresIn) return;
 
   // If the tokens expire in more than 1 minute, automatically register
   // a refresh handler. (They should not expire in less; however,
@@ -245,11 +257,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         );
       }
 
-      if (original.oidcPluginStateVersion !== 0) {
+      if (original.oidcPluginStateVersion !== 1) {
         throw new MongoDBOIDCError(
           `Stored OIDC data could not be deserialized because of a version mismatch (got ${JSON.stringify(
             original.oidcPluginStateVersion
-          )}, expected 0)`
+          )}, expected 1)`
         );
       }
 
@@ -265,10 +277,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
             : undefined,
           discardingTokenSets: serializedState.discardingTokenSets,
         };
-        this.updateStateWithTokenSet(
-          state,
-          new TokenSet(serializedState.currentTokenSet.set)
-        );
+        if (serializedState.currentTokenSet.set) {
+          this.updateStateWithTokenSet(
+            state,
+            TokenSet.fromSerialized(serializedState.currentTokenSet.set)
+          );
+        }
         this.mapIdpToAuthState.set(key, state);
       }
     } catch (err) {
@@ -285,7 +299,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   // Separate method so we can re-use the inferred return type in _deserialize()
   private _serialize() {
     return {
-      oidcPluginStateVersion: 0,
+      oidcPluginStateVersion: 1,
       state: [...this.mapIdpToAuthState]
         .filter(([, state]) => !!state.currentTokenSet)
         .map(([key, state]) => {
@@ -295,7 +309,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
               id: state.id,
               serverOIDCMetadata: { ...state.serverOIDCMetadata },
               currentTokenSet: {
-                set: { ...state.currentTokenSet?.set },
+                set: state.currentTokenSet?.set?.serialize(),
               },
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }
@@ -366,94 +380,119 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     return newState;
   }
 
-  private getSupportedDefaultScopes(issuer: Issuer): string[] {
+  private getSupportedDefaultScopes(
+    idpMetadata: AuthorizationServerMetadata
+  ): string[] {
     return ['openid', 'offline_access'].filter((scope) => {
       // Only add `openid` / `offline_access` if the IdP announces support
       // for those scopes, or if the IdP does not provide a list of scopes
       // and we cannot tell which it supports.
       // https://jira.mongodb.org/browser/COMPASS-7437
       return (
-        !Array.isArray(issuer.metadata.scopes_supported) ||
-        issuer.metadata.scopes_supported.includes(scope)
+        !Array.isArray(idpMetadata.scopes_supported) ||
+        idpMetadata.scopes_supported.includes(scope)
       );
     });
   }
 
-  // prettier does not understand the return type syntax, TS does
-  private getIssuerClass() /*: typeof Issuer<BaseClient>*/ {
-    const oidcPluginCustomHttpOptionsProvider: CustomHttpOptionsProvider = (
-      urlObject,
-      options
-    ) => {
-      const url = urlObject.toString();
-      this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
-      validateSecureHTTPUrl(url, '<generic>');
-      const { customHttpOptions } = this.options;
-      if (customHttpOptions && typeof customHttpOptions === 'object')
-        return customHttpOptions;
-      else return customHttpOptions?.(url, options) ?? {};
-    };
+  fetch: CustomFetch = async (url, init) => {
+    this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
 
-    class CustomIssuer extends Issuer<BaseClient> {
-      [custom.http_options]: CustomHttpOptionsProvider =
-        oidcPluginCustomHttpOptionsProvider;
-      static [custom.http_options]: CustomHttpOptionsProvider =
-        oidcPluginCustomHttpOptionsProvider;
-
-      constructor(...params: ConstructorParameters<typeof Issuer>) {
-        super(...params);
-        this.Client[custom.http_options] = oidcPluginCustomHttpOptionsProvider;
-        this.Client.prototype[custom.http_options] =
-          oidcPluginCustomHttpOptionsProvider;
-      }
-
-      static async discover(issuer: string): Promise<CustomIssuer> {
-        return new this((await super.discover(issuer)).metadata);
-      }
-
-      static async webfinger(input: string): Promise<CustomIssuer> {
-        return new this((await super.discover(input)).metadata);
-      }
+    if (this.options.customFetch) {
+      return await this.options.customFetch(url, init);
     }
 
-    return CustomIssuer;
-  }
+    const options =
+      typeof this.options.customHttpOptions === 'function'
+        ? this.options.customHttpOptions(url, {})
+        : this.options.customHttpOptions;
 
-  private async getOIDCClient(
+    // Same comments as in getDefaultOpenBrowser() apply regarding the import/eval fallbacks here.
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+    let fetch: typeof import('node-fetch').default;
+    try {
+      fetch = (await import('node-fetch')).default;
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'ERR_REQUIRE_ESM' &&
+        typeof __webpack_require__ === 'undefined'
+      ) {
+        fetch = (await eval('import("node-fetch")')).default;
+      } else {
+        throw err;
+      }
+    }
+    const AgentClass =
+      new URL(url).protocol === 'https:' ? HTTPSAgent : HTTPAgent;
+
+    return (await fetch(url, {
+      ...init,
+      agent: options?.agent ?? new AgentClass(options),
+      ...options,
+      headers: { ...options?.headers },
+      // TS is not convinced that node-fetch and built-in fetch are compatible enough
+    } as Parameters<typeof fetch>[1])) as unknown as Response;
+  };
+
+  private async getOIDCClientConfiguration(
     state: UserOIDCAuthState,
-    redirectURIs?: string[]
+    redirectURI?: string
   ): Promise<{
     scope: string;
-    issuer: Issuer;
-    client: BaseClient;
+    config: Configuration;
   }> {
     const serverMetadata = state.serverOIDCMetadata;
 
-    const makeScope = (issuer: Issuer) =>
+    const makeScope = (idpMetadata: AuthorizationServerMetadata) =>
       [
         ...new Set([
-          ...this.getSupportedDefaultScopes(issuer),
+          ...this.getSupportedDefaultScopes(idpMetadata),
           ...(serverMetadata.requestScopes ?? []),
         ]),
       ].join(' ');
 
-    if (state.client) {
+    if (state.config) {
+      const config = new Configuration(
+        state.config.serverMetadata(),
+        state.config.clientMetadata().client_id,
+        {
+          ...state.config.clientMetadata(),
+          redirect_uri: redirectURI,
+        }
+      );
+      if (
+        validateSecureHTTPUrl(config.serverMetadata().issuer, 'issuer') ===
+        'http-allowed'
+      ) {
+        allowInsecureRequests(config);
+      }
       return {
-        scope: makeScope(state.client.issuer),
-        issuer: state.client.issuer,
-        // need to re-create Client here because redirect_uris might
-        // differ between calls to this method
-        client: new state.client.issuer.Client({
-          ...state.client.metadata,
-          redirect_uris: redirectURIs,
-        }),
+        scope: makeScope(config.serverMetadata()),
+        config,
       };
     }
 
-    validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
-    let issuer: Issuer;
+    const httpAllowed = validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
+    const discoveryOptions = {
+      [customFetch]: this.fetch,
+      execute: httpAllowed === 'http-allowed' ? [allowInsecureRequests] : [],
+    };
+    let config: Configuration;
     try {
-      issuer = await this.getIssuerClass().discover(serverMetadata.issuer);
+      config = await discovery(
+        new URL(serverMetadata.issuer),
+        serverMetadata.clientId,
+        {
+          redirect_uri: redirectURI,
+        },
+        None(),
+        discoveryOptions
+      );
+      // NB: The fact that `customFetch` is transfered from `discoveryOptions` to `config`
+      // is tested by our unit tests when they verify that all outgoing HTTP calls are logged.
     } catch (err: unknown) {
       // openid-client just forwards the raw Node.js HTTP error, we'll want to
       // at least include the target URL here
@@ -467,27 +506,23 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       );
     }
     validateSecureHTTPUrl(
-      issuer.metadata.authorization_endpoint,
+      config.serverMetadata().authorization_endpoint,
       'authorization_endpoint'
     );
     validateSecureHTTPUrl(
-      issuer.metadata.device_authorization_endpoint,
+      config.serverMetadata().device_authorization_endpoint,
       'device_authorization_endpoint'
     );
-    validateSecureHTTPUrl(issuer.metadata.token_endpoint, 'token_endpoint');
-    validateSecureHTTPUrl(issuer.metadata.jwks_uri, 'jwks_uri');
-    const client = new issuer.Client({
-      client_id: serverMetadata.clientId,
-      redirect_uris: redirectURIs,
-      response_types: ['code'],
-      token_endpoint_auth_method: 'none',
-    });
-    state.client = client;
+    validateSecureHTTPUrl(
+      config.serverMetadata().token_endpoint,
+      'token_endpoint'
+    );
+    validateSecureHTTPUrl(config.serverMetadata().jwks_uri, 'jwks_uri');
 
+    state.config = config;
     return {
-      scope: makeScope(issuer),
-      issuer,
-      client,
+      scope: makeScope(config.serverMetadata()),
+      config,
     };
   }
 
@@ -563,7 +598,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     // then the plugin is passed to client B which requests a token, and we
     // receive mismatching tokens for different users or different audiences.
     if (
-      !tokenSet.id_token &&
+      !tokenSet.idToken &&
       state.lastIdTokenClaims &&
       !state.lastIdTokenClaims.noIdToken
     ) {
@@ -575,15 +610,19 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     if (
-      tokenSet.id_token &&
+      tokenSet.idToken &&
       state.lastIdTokenClaims &&
       state.lastIdTokenClaims.noIdToken
     ) {
       throw new MongoDBOIDCError(`Unexpected ID token received.`);
     }
 
-    if (tokenSet.id_token) {
-      const idTokenClaims = tokenSet.claims();
+    if (tokenSet.idToken) {
+      const idTokenClaims = tokenSet.idTokenClaims;
+      if (!idTokenClaims)
+        throw new MongoDBOIDCError(
+          'Internal error: id_token set but claims() unavailable'
+        );
       if (state.lastIdTokenClaims && !state.lastIdTokenClaims.noIdToken) {
         for (const claim of ['aud', 'sub'] as const) {
           const normalize = (value: string | string[]): string => {
@@ -610,7 +649,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       this.logger.emit('mongodb-oidc-plugin:missing-id-token');
     }
 
-    const refreshTokenId = getRefreshTokenId(tokenSet.refresh_token);
+    const refreshTokenId = getRefreshTokenId(tokenSet.refreshToken);
     const updateId = updateIdCounter++;
 
     const timerDuration = automaticRefreshTimeoutMS(
@@ -640,7 +679,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           triggeringUpdateId: updateId,
           expectedRefreshToken: refreshTokenId,
           actualRefreshToken: getRefreshTokenId(
-            state.currentTokenSet?.set?.refresh_token
+            state.currentTokenSet?.set?.refreshToken
           ),
         });
         return false;
@@ -650,16 +689,20 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           triggeringUpdateId: updateId,
           refreshToken: refreshTokenId,
         });
+        if (!tokenSet.refreshToken) return false;
 
-        const { client } = await this.getOIDCClient(state);
-        const refreshedTokens = await client.refresh(tokenSet);
+        const { config } = await this.getOIDCClientConfiguration(state);
+        const refreshedTokens = await refreshTokenGrant(
+          config,
+          tokenSet.refreshToken
+        );
         // Check again to avoid race conditions.
         if (state.currentTokenSet?.set === tokenSet) {
           this.logger.emit('mongodb-oidc-plugin:refresh-succeeded', {
             triggeringUpdateId: updateId,
             refreshToken: refreshTokenId,
           });
-          this.updateStateWithTokenSet(state, refreshedTokens);
+          this.updateStateWithTokenSet(state, new TokenSet(refreshedTokens));
           return true;
         }
       } catch (err: unknown) {
@@ -680,7 +723,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     this.logger.emit('mongodb-oidc-plugin:state-updated', {
       updateId,
       timerDuration,
-      tokenSetId: getStableTokenSetId(tokenSet),
+      tokenSetId: tokenSet.stableId(),
     });
   }
 
@@ -693,10 +736,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const configuredRedirectURI =
       this.options.redirectURI ?? MongoDBOIDCPluginImpl.defaultRedirectURI;
 
-    const codeVerifier = generators.codeVerifier();
-    const codeChallenge = generators.codeChallenge(codeVerifier);
+    const codeVerifier = randomPKCECodeVerifier();
+    const codeChallenge = await calculatePKCECodeChallenge(codeVerifier);
 
-    const oidcStateParam = (await promisify(randomBytes)(16)).toString('hex');
+    const oidcStateParam = randomState();
     const server = new RFC8252HTTPServer({
       redirectUrl: configuredRedirectURI,
       logger: this.logger,
@@ -706,12 +749,12 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     let paramsUrl = '';
 
     let scope!: string;
-    let client!: BaseClient;
+    let config!: Configuration;
     let actualRedirectURI!: string;
 
     const nonce = this.options.skipNonceInAuthCodeRequest
       ? undefined
-      : generators.nonce();
+      : randomNonce();
 
     try {
       await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
@@ -727,20 +770,22 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         ]);
 
         actualRedirectURI = server.listeningRedirectUrl as string;
-        ({ scope, client } = await this.getOIDCClient(state, [
-          actualRedirectURI,
-        ]));
+        ({ scope, config } = await this.getOIDCClientConfiguration(
+          state,
+          actualRedirectURI
+        ));
 
-        const authCodeFlowUrl = client.authorizationUrl({
+        const authCodeFlowUrl = buildAuthorizationUrl(config, {
           scope,
           code_challenge: codeChallenge,
           code_challenge_method: 'S256',
           state: oidcStateParam,
-          nonce,
+          ...(nonce ? { nonce } : {}),
+          redirect_uri: actualRedirectURI,
         });
         validateSecureHTTPUrl(authCodeFlowUrl, 'authCodeFlowUrl');
         const { localUrl, onAccessed: onLocalUrlAccessed } =
-          await server.addRedirect(authCodeFlowUrl);
+          await server.addRedirect(authCodeFlowUrl.toString());
 
         signalCheck();
 
@@ -813,25 +858,23 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       await server.close();
     }
 
-    const params = client.callbackParams(paramsUrl);
-    const tokenSet = await client.callback(actualRedirectURI, params, {
-      code_verifier: codeVerifier,
-      state: oidcStateParam,
-      nonce,
+    const tokenSet = await authorizationCodeGrant(config, new URL(paramsUrl), {
+      pkceCodeVerifier: codeVerifier,
+      expectedState: oidcStateParam,
+      expectedNonce: nonce,
     });
-    this.updateStateWithTokenSet(state, tokenSet);
+    this.updateStateWithTokenSet(state, new TokenSet(tokenSet));
   }
 
   private async deviceAuthorizationFlow(
     state: UserOIDCAuthState,
     signal: AbortSignal
   ): Promise<void> {
-    const { scope, client } = await this.getOIDCClient(state);
+    const { scope, config } = await this.getOIDCClientConfiguration(state);
 
     await withAbortCheck(signal, async ({ signalCheck, signalPromise }) => {
       const deviceFlowHandle = await Promise.race([
-        client.deviceAuthorization({
-          client_id: client.metadata.client_id,
+        initiateDeviceAuthorization(config, {
           scope,
         }),
         signalPromise,
@@ -843,8 +886,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         verificationUrl: deviceFlowHandle.verification_uri,
       });
 
-      const tokenSet = await deviceFlowHandle.poll({ signal });
-      this.updateStateWithTokenSet(state, tokenSet);
+      const tokenSet = await pollDeviceAuthorizationGrant(
+        config,
+        deviceFlowHandle,
+        {},
+        { signal }
+      );
+      this.updateStateWithTokenSet(state, new TokenSet(tokenSet));
     });
   }
 
@@ -939,9 +987,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         if (error) throw error;
       }
 
-      if (passIdTokenAsAccessToken && !state.currentTokenSet?.set?.id_token) {
+      if (passIdTokenAsAccessToken && !state.currentTokenSet?.set?.idToken) {
         throw new MongoDBOIDCError('Could not retrieve valid ID token');
-      } else if (!state.currentTokenSet?.set?.access_token) {
+      } else if (!state.currentTokenSet?.set?.accessToken) {
         throw new MongoDBOIDCError('Could not retrieve valid access token');
       }
     } catch (err: unknown) {
@@ -955,9 +1003,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       driverAbortSignal?.removeEventListener('abort', driverAbortCb);
     }
 
-    const { token_type, expires_at, access_token, id_token, refresh_token } =
+    const { tokenType, accessToken, idToken, refreshToken } =
       state.currentTokenSet.set;
-    const tokenSetId = getStableTokenSetId(state.currentTokenSet.set);
+    const expiresAt = state.currentTokenSet.set.expiresAt;
+    const tokenSetId = state.currentTokenSet.set.stableId();
 
     // We would not want to return the access token or ID token of a token set whose
     // accompanying refresh token was passed to us by the driver
@@ -967,14 +1016,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     this.logger.emit('mongodb-oidc-plugin:auth-succeeded', {
       authStateId: state.id,
-      tokenType: token_type ?? null, // DPoP or Bearer
-      refreshToken: getRefreshTokenId(refresh_token),
-      expiresAt: expires_at ? new Date(expires_at * 1000).toISOString() : null,
+      tokenType: tokenType ?? null, // DPoP or Bearer
+      refreshToken: getRefreshTokenId(refreshToken),
+      expiresAt: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
       passIdTokenAsAccessToken: !!passIdTokenAsAccessToken,
       tokens: {
-        accessToken: access_token,
-        idToken: id_token,
-        refreshToken: refresh_token,
+        accessToken: accessToken,
+        idToken: idToken,
+        refreshToken: refreshToken,
       },
       tokenSetId,
       forceRefreshOrReauth,
@@ -988,7 +1037,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     }
 
     return {
-      accessToken: passIdTokenAsAccessToken ? id_token || '' : access_token,
+      accessToken: passIdTokenAsAccessToken ? idToken || '' : accessToken,
       refreshToken: tokenSetId,
       // Passing `expiresInSeconds: 0` results in the driver not caching the token.
       // We perform our own caching here inside the plugin, so interactions with the

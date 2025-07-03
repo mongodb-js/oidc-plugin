@@ -11,7 +11,10 @@ import type {
 } from './types';
 import type { RequestOptions } from 'https';
 
-/** @public */
+/**
+ * @public
+ * @deprecated Use a custom `fetch` function instead
+ */
 export type HttpOptions = Partial<
   Pick<
     RequestOptions,
@@ -187,10 +190,19 @@ export interface MongoDBOIDCPluginOptions {
 
   /**
    * Provide custom HTTP options for individual HTTP calls.
+   *
+   * @deprecated Use a custom `fetch` function instead.
    */
   customHttpOptions?:
     | HttpOptions
     | ((url: string, options: Readonly<HttpOptions>) => HttpOptions);
+
+  /**
+   * Provide a custom `fetch` function to be used for HTTP calls.
+   *
+   * Any API that is compatible with the web `fetch` API can be used here.
+   */
+  customFetch?: (url: string, options: Readonly<unknown>) => Promise<Response>;
 
   /**
    * Pass ID tokens in place of access tokens. For debugging/working around

@@ -346,18 +346,16 @@ describe('OIDC plugin (local OIDC provider)', function () {
         // allow for a small margin of error
         expect(timeouts[1].timeout).to.be.greaterThanOrEqual(9_600_000);
         expect(timeouts[1].timeout).to.be.lessThanOrEqual(9_800_000);
+        const logger = plugin.logger as typeof plugin.logger & EventEmitter;
         const refreshStartedEvent = once(
-          plugin.logger,
+          logger,
           'mongodb-oidc-plugin:refresh-started'
         );
         timeouts[1].fn();
         await refreshStartedEvent;
-        await once(plugin.logger, 'mongodb-oidc-plugin:refresh-succeeded');
+        await once(logger, 'mongodb-oidc-plugin:refresh-succeeded');
 
-        const skipEvent = once(
-          plugin.logger,
-          'mongodb-oidc-plugin:skip-auth-attempt'
-        );
+        const skipEvent = once(logger, 'mongodb-oidc-plugin:skip-auth-attempt');
         const result2 = await requestToken(
           plugin,
           provider.getMongodbOIDCDBInfo()
@@ -395,7 +393,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         const serializedData = JSON.parse(
           Buffer.from(rawData, 'base64').toString('utf8')
         );
-        expect(serializedData.oidcPluginStateVersion).to.equal(0);
+        expect(serializedData.oidcPluginStateVersion).to.equal(1);
         expect(serializedData.state).to.have.lengthOf(1);
         expect(serializedData.state[0][0]).to.be.a('string');
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -415,7 +413,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         const serializedData = JSON.parse(
           Buffer.from(rawData, 'base64').toString('utf8')
         );
-        expect(serializedData.oidcPluginStateVersion).to.equal(0);
+        expect(serializedData.oidcPluginStateVersion).to.equal(1);
         expect(serializedData.state).to.have.lengthOf(1);
       });
 
@@ -921,14 +919,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
       const nowS = Date.now() / 1000;
       const nowMS = nowS * 1000;
       expect(automaticRefreshTimeoutMS({})).to.equal(undefined);
-      expect(automaticRefreshTimeoutMS({ expires_at: nowS + 10000 })).to.equal(
+      expect(automaticRefreshTimeoutMS({ expiresAt: nowS + 10000 })).to.equal(
         undefined
       );
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 10000,
+            refreshToken: 'asdf',
+            expiresAt: nowS + 10000,
           },
           undefined,
           nowMS
@@ -937,8 +935,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 100,
+            refreshToken: 'asdf',
+            expiresAt: nowS + 100,
           },
           undefined,
           nowMS
@@ -947,12 +945,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 100,
-            id_token: '...',
-            claims() {
-              return { exp: nowS + 500 };
-            },
+            refreshToken: 'asdf',
+            expiresAt: nowS + 100,
+            idTokenClaims: { exp: nowS + 500 },
           },
           true,
           nowMS
@@ -961,12 +956,9 @@ describe('OIDC plugin (local OIDC provider)', function () {
       expect(
         automaticRefreshTimeoutMS(
           {
-            refresh_token: 'asdf',
-            expires_at: nowS + 100,
-            id_token: '...',
-            claims() {
-              return { exp: nowS + 500 };
-            },
+            refreshToken: 'asdf',
+            expiresAt: nowS + 100,
+            idTokenClaims: { exp: nowS + 500 },
           },
           false,
           nowMS
@@ -974,20 +966,20 @@ describe('OIDC plugin (local OIDC provider)', function () {
       ).to.equal(50000);
       expect(
         automaticRefreshTimeoutMS({
-          refresh_token: 'asdf',
-          expires_at: nowS + 10,
+          refreshToken: 'asdf',
+          expiresAt: nowS + 10,
         })
       ).to.equal(undefined);
       expect(
         automaticRefreshTimeoutMS({
-          refresh_token: 'asdf',
-          expires_at: nowS + 0,
+          refreshToken: 'asdf',
+          expiresAt: nowS + 0,
         })
       ).to.equal(undefined);
       expect(
         automaticRefreshTimeoutMS({
-          refresh_token: 'asdf',
-          expires_at: nowS + -10,
+          refreshToken: 'asdf',
+          expiresAt: nowS + -10,
         })
       ).to.equal(undefined);
     });
@@ -1054,7 +1046,11 @@ describe('OIDC plugin (local OIDC provider)', function () {
         'jwks_uri',
       ]) {
         it(`rejects an ${endpoint} endpoint which reports non-https endpoints`, async function () {
+          const issuer = `http://localhost:${
+            (server.address() as AddressInfo).port
+          }/`;
           response = {
+            issuer,
             authorization_endpoint: 'https://somehost/',
             device_authorization_endpoint: 'https://somehost/',
             token_endpoint: 'https://somehost/',
@@ -1064,9 +1060,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           try {
             await requestToken(plugin, {
               clientId: 'clientId',
-              issuer: `http://localhost:${
-                (server.address() as AddressInfo).port
-              }/`,
+              issuer,
             });
             expect.fail('missed exception');
           } catch (err: any) {
@@ -1176,6 +1170,15 @@ describe('OIDC plugin (local OIDC provider)', function () {
           throw new Error('Missing Azure credentials');
         // eslint-disable-next-line no-console
         console.info('skipping Azure integration tests due to missing config');
+        return this.skip();
+      }
+
+      if (process.env.EVR_TASK_ID && process.platform === 'darwin') {
+        // TODO(MONGOSH-2335): Unskip Azure integration tests on macOS in Evergreen
+        // eslint-disable-next-line no-console
+        console.info(
+          'skipping Azure integration tests on macOS in Evergreen MONGOSH-2335'
+        );
         return this.skip();
       }
 
@@ -1396,8 +1399,8 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     });
   });
 
-  context('HTTP request tracking', function () {
-    it('will log all outgoing HTTP requests', async function () {
+  context('HTTP request handling', function () {
+    it('will track all outgoing HTTP requests', async function () {
       const pluginHttpRequests: string[] = [];
       const localServerHttpRequests: string[] = [];
       const browserHttpRequests: string[] = [];
@@ -1449,6 +1452,45 @@ describe('OIDC plugin (mock OIDC provider)', function () {
         .map(removeSearchParams)
         .sort();
       expect(allOutboundRequests).to.deep.equal(allInboundRequests);
+    });
+
+    it('allows node-fetch as a custom HTTP fetch client', async function () {
+      const customFetch = sinon.stub().callsFake(fetch);
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+        customFetch,
+      });
+      const result = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      expect(result.accessToken).to.be.a('string');
+      expect(customFetch).to.have.been.called;
+    });
+
+    it('allows global Node.js fetch as a custom HTTP fetch client', async function () {
+      const customFetch: typeof globalThis.fetch = sinon
+        .stub()
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        .callsFake(globalThis.fetch);
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+        customFetch,
+      });
+      const result = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+      });
+      expect(result.accessToken).to.be.a('string');
+      expect(customFetch).to.have.been.called;
     });
   });
 });
