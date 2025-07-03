@@ -164,7 +164,9 @@ export class RFC8252HTTPServer {
   private _handleOIDCCallback: RequestHandler = (req, res) => {
     const baseUrl = this.listeningRedirectUrl;
     if (!baseUrl) {
-      throw new MongoDBOIDCError('Received HTTP request while not listening');
+      throw new MongoDBOIDCError('Received HTTP request while not listening', {
+        codeName: 'InvalidRequestNotListening',
+      });
     }
 
     let isAcceptedOIDCResponse = false;
@@ -193,7 +195,8 @@ export class RFC8252HTTPServer {
           new MongoDBOIDCError(
             `${info.error || 'unknown_code'}: ${
               info.errorDescription || '[no details]'
-            }`
+            }`,
+            { codeName: 'IDPRejectedAuthCodeFlow' }
           )
         );
       }
@@ -331,7 +334,8 @@ export class RFC8252HTTPServer {
         .join(',');
       // Should never happen
       throw new MongoDBOIDCError(
-        `Server is listening in inconsistent state: ${addressesDebugInfo}`
+        `Server is listening in inconsistent state: ${addressesDebugInfo}`,
+        { codeName: 'InvalidServerStatePortMismatch' }
       );
     }
     return port;
@@ -357,13 +361,15 @@ export class RFC8252HTTPServer {
   public async listen(): Promise<void> {
     if (this.listeningPort !== undefined) {
       throw new MongoDBOIDCError(
-        `Already listening on ${this.redirectUrl.toString()}`
+        `Already listening on ${this.redirectUrl.toString()}`,
+        { codeName: 'InvalidServerStateAlreadyListening' }
       );
     }
 
     if (this.redirectUrl.protocol !== 'http:') {
       throw new MongoDBOIDCError(
-        `Cannot handle listening on non-HTTP URL, got ${this.redirectUrl.protocol}`
+        `Cannot handle listening on non-HTTP URL, got ${this.redirectUrl.protocol}`,
+        { codeName: 'InvalidRedirectURLProtocol' }
       );
     }
 
@@ -403,7 +409,8 @@ export class RFC8252HTTPServer {
 
     if (dnsResults.length === 0) {
       throw new MongoDBOIDCError(
-        `DNS query for ${this.redirectUrl.hostname} returned no results`
+        `DNS query for ${this.redirectUrl.hostname} returned no results`,
+        { codeName: 'LocalEndpointResolutionFailedNoResults' }
       );
     }
 
@@ -436,7 +443,8 @@ export class RFC8252HTTPServer {
           if (typeof port !== 'number') {
             // Should never happen
             throw new MongoDBOIDCError(
-              `Listening on ${dnsResults[0].address} (family = ${dnsResults[0].family}) did not return a port`
+              `Listening on ${dnsResults[0].address} (family = ${dnsResults[0].family}) did not return a port`,
+              { codeName: 'LocalEndpointResolutionFailedNoPort' }
             );
           }
         }

@@ -211,10 +211,14 @@ const MongoDBOIDCErrorTag = Symbol.for('@@mdb.oidcplugin.MongoDBOIDCErrorTag');
 export class MongoDBOIDCError extends Error {
   /** @internal */
   private [MongoDBOIDCErrorTag] = true;
+  public readonly codeName: `MongoDBOIDC${string}`;
 
-  constructor(message: string, { cause }: { cause?: unknown } = {}) {
-    // @ts-expect-error `cause` is not supported in Node.js 14
+  constructor(
+    message: string,
+    { cause, codeName }: { cause?: unknown; codeName: string }
+  ) {
     super(message, { cause });
+    this.codeName = `MongoDBOIDC${codeName}`;
   }
 
   static isMongoDBOIDCError(value: unknown): value is MongoDBOIDCError {
