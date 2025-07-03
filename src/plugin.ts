@@ -253,7 +253,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         throw new MongoDBOIDCError(
           `Stored OIDC data could not be deserialized: ${
             (err as Error).message
-          }`
+          }`,
+          { cause: err, codeName: 'DeserializeFormatMismatch' }
         );
       }
 
@@ -261,7 +262,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         throw new MongoDBOIDCError(
           `Stored OIDC data could not be deserialized because of a version mismatch (got ${JSON.stringify(
             original.oidcPluginStateVersion
-          )}, expected 1)`
+          )}, expected 1)`,
+          { codeName: 'DeserializeVersionMismatch' }
         );
       }
 
@@ -353,13 +355,16 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     serverMetadata: IdPServerInfo & Pick<OIDCCallbackParams, 'username'>
   ): UserOIDCAuthState {
     if (!serverMetadata.issuer || typeof serverMetadata.issuer !== 'string') {
-      throw new MongoDBOIDCError(`'issuer' is missing`);
+      throw new MongoDBOIDCError(`'issuer' is missing`, {
+        codeName: 'MissingIssuer',
+      });
     }
     validateSecureHTTPUrl(serverMetadata.issuer, 'issuer');
 
     if (!serverMetadata.clientId) {
       throw new MongoDBOIDCError(
-        'No clientId passed in server OIDC metadata object'
+        'No clientId passed in server OIDC metadata object',
+        { codeName: 'MissingClientId' }
       );
     }
 
@@ -502,6 +507,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         )}: ${messageFromError(err)}`,
         {
           cause: err,
+          codeName: 'IssuerMetadataDiscoveryFailed',
         }
       );
     }
@@ -538,7 +544,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     new URL(options.url);
     if (!/^[a-zA-Z0-9%/:;_.,=@-]+$/.test(options.url)) {
       throw new MongoDBOIDCError(
-        `Unexpected format for internally generated URL: '${options.url}'`
+        `Unexpected format for internally generated URL: '${options.url}'`,
+        { codeName: 'GeneratedUrlInvalidForOpenBrowserCommand' }
       );
     }
     this.logger.emit('mongodb-oidc-plugin:open-browser', {
@@ -547,7 +554,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     if (this.options.openBrowser === false) {
       // We should never really get to this point
       throw new MongoDBOIDCError(
-        'Cannot open browser if `openBrowser` is false'
+        'Cannot open browser if `openBrowser` is false',
+        { codeName: 'OpenBrowserDisabled' }
       );
     }
     if (typeof this.options.openBrowser === 'function') {
@@ -567,7 +575,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       child.unref();
       return child;
     }
-    throw new MongoDBOIDCError('Unknown format for `openBrowser`');
+    throw new MongoDBOIDCError('Unknown format for `openBrowser`', {
+      codeName: 'OpenBrowserOptionFormatUnknown',
+    });
   }
 
   private async notifyDeviceFlow(
@@ -580,7 +590,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     if (!this.options.notifyDeviceFlow) {
       // Should never happen.
       throw new MongoDBOIDCError(
-        'notifyDeviceFlow() requested but not provided'
+        'notifyDeviceFlow() requested but not provided',
+        { codeName: 'DeviceFlowNotEnabled' }
       );
     }
     this.logger.emit('mongodb-oidc-plugin:notify-device-flow');
@@ -605,7 +616,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       throw new MongoDBOIDCError(
         `ID token expected, but not found. Expected claims: ${JSON.stringify(
           state.lastIdTokenClaims
-        )}`
+        )}`,
+        { codeName: 'IDTokenClaimsMismatchTokenMissing' }
       );
     }
 
@@ -614,14 +626,17 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       state.lastIdTokenClaims &&
       state.lastIdTokenClaims.noIdToken
     ) {
-      throw new MongoDBOIDCError(`Unexpected ID token received.`);
+      throw new MongoDBOIDCError(`Unexpected ID token received.`, {
+        codeName: 'IDTokenClaimsMismatchTokenUnexpectedlyPresent',
+      });
     }
 
     if (tokenSet.idToken) {
       const idTokenClaims = tokenSet.idTokenClaims;
       if (!idTokenClaims)
         throw new MongoDBOIDCError(
-          'Internal error: id_token set but claims() unavailable'
+          'Internal error: id_token set but claims() unavailable',
+          { codeName: 'IDTokenClaimsUnavailable' }
         );
       if (state.lastIdTokenClaims && !state.lastIdTokenClaims.noIdToken) {
         for (const claim of ['aud', 'sub'] as const) {
@@ -635,7 +650,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
           if (knownClaim !== newClaim) {
             throw new MongoDBOIDCError(
-              `Unexpected '${claim}' field in id token: Expected ${knownClaim}, saw ${newClaim}`
+              `Unexpected '${claim}' field in id token: Expected ${knownClaim}, saw ${newClaim}`,
+              { codeName: 'IDTokenClaimsMismatchClaimMismatch' }
             );
           }
         }
@@ -807,7 +823,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
                       `Opening browser failed with '${messageFromError(
                         err
                       )}'${extraErrorInfo()}`,
-                      { cause: err }
+                      { cause: err, codeName: 'BrowserOpenFailedSpawnError' }
                     )
                   )
                 );
@@ -815,7 +831,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
                   if (code !== 0)
                     reject(
                       new MongoDBOIDCError(
-                        `Opening browser failed with exit code ${code}${extraErrorInfo()}`
+                        `Opening browser failed with exit code ${code}${extraErrorInfo()}`,
+                        { codeName: 'BrowserOpenFailedNonZeroExit' }
                       )
                     );
                 });
@@ -831,7 +848,11 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
                 .call(
                   null,
                   () =>
-                    reject(new MongoDBOIDCError('Opening browser timed out')),
+                    reject(
+                      new MongoDBOIDCError('Opening browser timed out', {
+                        codeName: 'BrowserOpenTimeout',
+                      })
+                    ),
                   this.options.openBrowserTimeout ?? kDefaultOpenBrowserTimeout
                 )
                 ?.unref?.();
@@ -988,9 +1009,13 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       }
 
       if (passIdTokenAsAccessToken && !state.currentTokenSet?.set?.idToken) {
-        throw new MongoDBOIDCError('Could not retrieve valid ID token');
+        throw new MongoDBOIDCError('Could not retrieve valid ID token', {
+          codeName: 'IDTokenMissingFromTokenSet',
+        });
       } else if (!state.currentTokenSet?.set?.accessToken) {
-        throw new MongoDBOIDCError('Could not retrieve valid access token');
+        throw new MongoDBOIDCError('Could not retrieve valid access token', {
+          codeName: 'AccessTokenMissingFromTokenSet',
+        });
       }
     } catch (err: unknown) {
       this.logger.emit('mongodb-oidc-plugin:auth-failed', {
@@ -1058,18 +1083,22 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     if (params.version !== 1) {
       throw new MongoDBOIDCError(
         // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-        `OIDC MongoDB driver protocol mismatch: unknown version ${params.version}`
+        `OIDC MongoDB driver protocol mismatch: unknown version ${params.version}`,
+        { codeName: 'ProtocolVersionMismatch' }
       );
     }
 
     if (this.destroyed) {
       throw new MongoDBOIDCError(
-        'This OIDC plugin instance has been destroyed and is no longer active'
+        'This OIDC plugin instance has been destroyed and is no longer active',
+        { codeName: 'PluginInstanceDestroyed' }
       );
     }
 
     if (!params.idpInfo) {
-      throw new MongoDBOIDCError('No IdP information provided');
+      throw new MongoDBOIDCError('No IdP information provided', {
+        codeName: 'IdPInfoMissing',
+      });
     }
 
     const state = this.getAuthState({
