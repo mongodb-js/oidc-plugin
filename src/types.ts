@@ -127,6 +127,15 @@ export interface MongoDBOIDCLogEventsMap {
   'mongodb-oidc-plugin:missing-id-token': () => void;
   'mongodb-oidc-plugin:outbound-http-request': (event: { url: string }) => void;
   'mongodb-oidc-plugin:inbound-http-request': (event: { url: string }) => void;
+  'mongodb-oidc-plugin:outbound-http-request-failed': (event: {
+    url: string;
+    error: string;
+  }) => void;
+  'mongodb-oidc-plugin:outbound-http-request-completed': (event: {
+    url: string;
+    status: number;
+    statusText: string;
+  }) => void;
   'mongodb-oidc-plugin:received-server-params': (event: {
     params: OIDCCallbackParams;
   }) => void;

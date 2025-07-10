@@ -380,6 +380,26 @@ export function hookLoggerToMongoLogWriter(
     );
   });
 
+  emitter.on('mongodb-oidc-plugin:outbound-http-request-completed', (ev) => {
+    log.debug?.(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_032),
+      `${contextPrefix}-oidc`,
+      'Outbound HTTP request completed',
+      { ...ev, url: redactUrl(ev.url) }
+    );
+  });
+
+  emitter.on('mongodb-oidc-plugin:outbound-http-request-failed', (ev) => {
+    log.debug?.(
+      'OIDC-PLUGIN',
+      mongoLogId(1_002_000_033),
+      `${contextPrefix}-oidc`,
+      'Outbound HTTP request failed',
+      { ...ev, url: redactUrl(ev.url) }
+    );
+  });
+
   emitter.on('mongodb-oidc-plugin:state-updated', (ev) => {
     log.info(
       'OIDC-PLUGIN',

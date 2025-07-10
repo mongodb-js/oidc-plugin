@@ -4,7 +4,7 @@ import type {
   TokenEndpointResponse,
   TokenEndpointResponseHelpers,
 } from 'openid-client';
-import type { OIDCAbortSignal } from './types';
+import { MongoDBOIDCError, type OIDCAbortSignal } from './types';
 import { createHash, randomBytes } from 'crypto';
 
 class AbortError extends Error {
@@ -234,4 +234,51 @@ export class TokenSet {
       )
       .digest('hex');
   }
+}
+
+// openid-client@6.x has reduced error messages for HTTP errors significantly, reducing e.g.
+// an HTTP error to just a simple 'unexpect HTTP response status code' message, without
+// further diagnostic information. So if the `cause` of an `err` object is a fetch `Response`
+// object, we try to throw a more helpful error.
+export async function improveHTTPResponseBasedError<T>(
+  err: T
+): Promise<T | MongoDBOIDCError> {
+  if (
+    err &&
+    typeof err === 'object' &&
+    'cause' in err &&
+    err.cause &&
+    typeof err.cause === 'object' &&
+    'status' in err.cause &&
+    'statusText' in err.cause &&
+    'text' in err.cause &&
+    typeof err.cause.text === 'function'
+  ) {
+    try {
+      let body = '';
+      try {
+        body = await err.cause.text();
+      } catch {
+        // ignore
+      }
+      let errorMessageFromBody = '';
+      try {
+        const parsed = JSON.parse(body);
+        errorMessageFromBody =
+          ': ' + String(parsed.error_description || parsed.error || '');
+      } catch {
+        // ignore
+      }
+      if (!errorMessageFromBody) errorMessageFromBody = `: ${body}`;
+      return new MongoDBOIDCError(
+        `${errorString(err)}: caused by HTTP response ${String(
+          err.cause.status
+        )} (${String(err.cause.statusText)})${errorMessageFromBody}`,
+        { codeName: 'HTTPResponseError', cause: err }
+      );
+    } catch {
+      return err;
+    }
+  }
+  return err;
 }

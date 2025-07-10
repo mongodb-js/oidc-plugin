@@ -10,6 +10,7 @@ import { MongoDBOIDCError } from './types';
 import {
   errorString,
   getRefreshTokenId,
+  improveHTTPResponseBasedError,
   messageFromError,
   normalizeObject,
   throwIfAborted,
@@ -400,9 +401,27 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     });
   }
 
-  fetch: CustomFetch = async (url, init) => {
+  private fetch: CustomFetch = async (url, init) => {
     this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
 
+    try {
+      const response = await this.doFetch(url, init);
+      this.logger.emit('mongodb-oidc-plugin:outbound-http-request-completed', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return response;
+    } catch (err) {
+      this.logger.emit('mongodb-oidc-plugin:outbound-http-request-failed', {
+        url,
+        error: errorString(err),
+      });
+      throw err;
+    }
+  };
+
+  private doFetch: CustomFetch = async (url, init) => {
     if (this.options.customFetch) {
       return await this.options.customFetch(url, init);
     }
@@ -1022,7 +1041,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         authStateId: state.id,
         error: errorString(err),
       });
-      throw err;
+      throw await improveHTTPResponseBasedError(err);
     } finally {
       this.options.signal?.removeEventListener('abort', optionsAbortCb);
       driverAbortSignal?.removeEventListener('abort', driverAbortCb);

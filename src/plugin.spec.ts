@@ -1492,5 +1492,45 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       expect(result.accessToken).to.be.a('string');
       expect(customFetch).to.have.been.called;
     });
+
+    it('logs helpful error messages', async function () {
+      const outboundHTTPRequestsCompleted: any[] = [];
+
+      getTokenPayload = () => Promise.reject(new Error('test failure'));
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+
+      plugin.logger.on(
+        'mongodb-oidc-plugin:outbound-http-request-completed',
+        (ev) => outboundHTTPRequestsCompleted.push(ev)
+      );
+
+      try {
+        await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.equal(
+          'unexpected HTTP response status code: caused by HTTP response 500 (Internal Server Error): test failure'
+        );
+      }
+      expect(outboundHTTPRequestsCompleted).to.deep.include({
+        url: `${provider.issuer}/.well-known/openid-configuration`,
+        status: 200,
+        statusText: 'OK',
+      });
+      expect(outboundHTTPRequestsCompleted).to.deep.include({
+        url: `${provider.issuer}/token`,
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+    });
   });
 });
