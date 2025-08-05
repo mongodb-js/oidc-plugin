@@ -21,6 +21,8 @@ export type {
   OIDCAbortSignal,
   MongoDBOIDCError,
   MongoDBOIDCLogEventsMap,
+  OidcToken,
+  TokenCache,
 } from './types';
 
 export { hookLoggerToMongoLogWriter, MongoLogWriter } from './log-hook';

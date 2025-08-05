@@ -237,3 +237,27 @@ export class MongoDBOIDCError extends Error {
     );
   }
 }
+
+/**
+ * Represents an OIDC token for caching purposes.
+ * @public
+ */
+export interface OidcToken {
+  /** Bearer-token for the "MONGODB-OIDC" auth mech */
+  accessToken: string;
+  /** Optional refresh-token so the plugin can silently renew */
+  refreshToken?: string;
+  /** Absolute epoch-ms when accessToken expires */
+  expiresAt?: number;
+}
+
+/**
+ * Interface for providing external token cache implementations.
+ * @public
+ */
+export interface TokenCache {
+  /** Return a cached token or undefined */
+  get(): Promise<OidcToken | undefined>;
+  /** Persist the freshly fetched token (non-blocking errors are OK) */
+  set(token: OidcToken): Promise<void>;
+}

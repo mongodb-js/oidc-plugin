@@ -4,6 +4,7 @@ import type {
   OIDCCallbackParams,
   IdPServerInfo,
   IdPServerResponse,
+  OidcToken,
   TypedEventEmitter,
 } from './types';
 import { MongoDBOIDCError } from './types';
@@ -760,6 +761,29 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       timerDuration,
       tokenSetId: tokenSet.stableId(),
     });
+
+    // Write to external cache if provided
+    if (this.options.tokenCache) {
+      const writeToCache = async () => {
+        try {
+          const oidcToken = this.tokenSetToOidcToken(tokenSet);
+          if (this.options.tokenCache) {
+            await this.options.tokenCache.set(oidcToken);
+          }
+        } catch (err: unknown) {
+          // Log cache write errors but don't fail the authentication
+          this.logger.emit('mongodb-oidc-plugin:auth-failed', {
+            authStateId: state.id,
+            error: `Token cache write failed: ${errorString(err)}`,
+          });
+        }
+      };
+
+      // Non-blocking cache write
+      writeToCache().catch(() => {
+        // Already handled above, this just prevents unhandled promise rejection
+      });
+    }
   }
 
   static readonly defaultRedirectURI = 'http://localhost:27097/redirect';
@@ -960,6 +984,36 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     try {
       get_tokens: {
+        // Check external token cache first if provided
+        if (!forceRefreshOrReauth && this.options.tokenCache) {
+          try {
+            const cachedToken = await this.options.tokenCache.get();
+            if (cachedToken) {
+              const expiresInMs = cachedToken.expiresAt
+                ? cachedToken.expiresAt - Date.now()
+                : Infinity;
+              const expiresInSeconds = expiresInMs / 1000;
+
+              // Use cached token if it expires in more than 60 seconds
+              if (!cachedToken.expiresAt || expiresInSeconds > 60) {
+                const tokenSet = this.oidcTokenToTokenSet(cachedToken);
+                this.updateStateWithTokenSet(state, tokenSet);
+                this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
+                  authStateId: state.id,
+                  reason: 'cache-hit',
+                });
+                break get_tokens;
+              }
+            }
+          } catch (err: unknown) {
+            // Log cache read errors but don't fail authentication
+            this.logger.emit('mongodb-oidc-plugin:auth-failed', {
+              authStateId: state.id,
+              error: `Token cache read failed: ${errorString(err)}`,
+            });
+          }
+        }
+
         if (
           !forceRefreshOrReauth &&
           tokenExpiryInSeconds(
@@ -1178,6 +1232,55 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         }
       }
     }
+  }
+
+  /**
+   * Convert a TokenSet to an OidcToken for external cache storage.
+   * @param tokenSet The internal TokenSet to convert
+   * @returns OidcToken for cache storage
+   */
+  private tokenSetToOidcToken(tokenSet: TokenSet): OidcToken {
+    if (!tokenSet.accessToken) {
+      throw new MongoDBOIDCError(
+        'Cannot cache token set without access token',
+        {
+          codeName: 'TokenSetMissingAccessToken',
+        }
+      );
+    }
+
+    return {
+      accessToken: tokenSet.accessToken,
+      refreshToken: tokenSet.refreshToken,
+      expiresAt: tokenSet.expiresAt ? tokenSet.expiresAt * 1000 : undefined, // Convert to milliseconds
+    };
+  }
+
+  /**
+   * Convert an OidcToken from external cache to a TokenSet for internal use.
+   * @param oidcToken The cached token to convert
+   * @returns TokenSet for internal use
+   */
+  private oidcTokenToTokenSet(oidcToken: OidcToken): TokenSet {
+    // Create a mock TokenEndpointResponse that satisfies the openid-client types
+    const mockTokenResponse = {
+      access_token: oidcToken.accessToken,
+      token_type: 'bearer' as const,
+      refresh_token: oidcToken.refreshToken,
+      id_token: undefined,
+    };
+
+    // Use TokenSet.fromSerialized which is designed to handle reconstructed tokens
+    const serializedFormat = {
+      ...mockTokenResponse,
+      claims: undefined,
+      expiresAt: oidcToken.expiresAt
+        ? Math.floor(oidcToken.expiresAt / 1000)
+        : undefined,
+      expiresIn: undefined,
+    };
+
+    return TokenSet.fromSerialized(serializedFormat);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
