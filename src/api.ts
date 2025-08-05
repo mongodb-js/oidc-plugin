@@ -7,6 +7,7 @@ import type {
   MongoDBOIDCLogEventsMap,
   OIDCAbortSignal,
   OIDCCallbackFunction,
+  TokenCache,
   TypedEventEmitter,
 } from './types';
 import type { RequestOptions } from 'https';
@@ -217,6 +218,14 @@ export interface MongoDBOIDCPluginOptions {
    * Default is `false`.
    */
   skipNonceInAuthCodeRequest?: boolean;
+
+  /**
+   * An optional external token cache for sharing tokens between processes.
+   * If provided, the plugin will check the cache for valid tokens before
+   * initiating interactive authentication flows, and will store fresh tokens
+   * after successful authentication.
+   */
+  tokenCache?: TokenCache;
 }
 
 /** @public */

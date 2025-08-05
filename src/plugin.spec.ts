@@ -4,7 +4,9 @@ import type {
   OIDCAbortSignal,
   IdPServerInfo,
   OIDCCallbackFunction,
+  OidcToken,
   OpenBrowserOptions,
+  TokenCache,
 } from './';
 import { createMongoDBOIDCPlugin, hookLoggerToMongoLogWriter } from './';
 import { once } from 'events';
@@ -77,6 +79,47 @@ function getJWTContents(input: string): Record<string, unknown> {
 
 async function delay(ms: number) {
   return await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Mock TokenCache implementation for testing
+class MockTokenCache implements TokenCache {
+  private cache = new Map<string, OidcToken>();
+  private shouldThrowOnGet = false;
+  private shouldThrowOnSet = false;
+
+  setShouldThrowOnGet(shouldThrow: boolean): void {
+    this.shouldThrowOnGet = shouldThrow;
+  }
+
+  setShouldThrowOnSet(shouldThrow: boolean): void {
+    this.shouldThrowOnSet = shouldThrow;
+  }
+
+  setToken(key: string, token: OidcToken): void {
+    this.cache.set(key, token);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  async get(): Promise<OidcToken | undefined> {
+    if (this.shouldThrowOnGet) {
+      throw new Error('Mock cache get error');
+    }
+    // For simplicity, return the first cached token (tests typically use one token)
+    const values = Array.from(this.cache.values());
+    return Promise.resolve(values.length > 0 ? values[0] : undefined);
+  }
+
+  async set(token: OidcToken): Promise<void> {
+    if (this.shouldThrowOnSet) {
+      throw new Error('Mock cache set error');
+    }
+    // For simplicity, store with a default key (tests can use setToken for specific keys)
+    this.cache.set('default', token);
+    return Promise.resolve();
+  }
 }
 
 function testAuthCodeFlow(
@@ -1232,6 +1275,175 @@ describe('OIDC plugin (local OIDC provider)', function () {
       const result = await requestToken(plugin, metadata);
       validateToken(getJWTContents(result.accessToken));
     });
+  });
+});
+
+// eslint-disable-next-line mocha/max-top-level-suites
+describe('TokenCache functionality', function () {
+  this.timeout(90_000);
+
+  let plugin: MongoDBOIDCPlugin;
+  let mockCache: MockTokenCache;
+  let provider: OIDCMockProvider;
+  let getTokenPayload: OIDCMockProviderConfig['getTokenPayload'];
+
+  const metadata: IdPServerInfo = {
+    issuer: 'http://localhost:0',
+    clientId: 'testClient',
+  };
+
+  beforeEach(async function () {
+    mockCache = new MockTokenCache();
+
+    getTokenPayload = () => ({
+      expires_in: 3600,
+      payload: {
+        sub: 'test-user',
+        aud: metadata.clientId,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+    });
+
+    provider = await OIDCMockProvider.create({
+      getTokenPayload,
+    });
+    metadata.issuer = provider.issuer.toString();
+  });
+
+  afterEach(async function () {
+    await plugin?.destroy();
+    await provider?.close();
+  });
+
+  it('uses cached token when available and valid', async function () {
+    const validToken: OidcToken = {
+      accessToken: 'cached-access-token',
+      refreshToken: 'cached-refresh-token',
+      expiresAt: Date.now() + 120000, // Expires in 2 minutes
+    };
+
+    await mockCache.set(validToken);
+
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    expect(result.accessToken).to.equal('cached-access-token');
+    expect(result.refreshToken).to.be.a('string');
+    expect(result.expiresInSeconds).to.equal(0);
+  });
+
+  it('skips cache for expired tokens and performs full authentication', async function () {
+    const expiredToken: OidcToken = {
+      accessToken: 'expired-access-token',
+      refreshToken: 'expired-refresh-token',
+      expiresAt: Date.now() - 1000, // Expired 1 second ago
+    };
+
+    await mockCache.set(expiredToken);
+
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    // Should get fresh token from provider, not the expired cached one
+    expect(result.accessToken).to.not.equal('expired-access-token');
+    expect(result.accessToken).to.be.a('string');
+  });
+
+  it('performs full authentication when cache is empty', async function () {
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    expect(result.accessToken).to.be.a('string');
+    expect(result.refreshToken).to.be.a('string');
+  });
+
+  it('caches tokens after successful authentication', async function () {
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    await requestToken(plugin, metadata);
+
+    // Wait a bit for async cache write
+    await delay(100);
+
+    const cachedToken = await mockCache.get();
+    expect(cachedToken).to.not.be.undefined;
+    if (cachedToken) {
+      expect(cachedToken.accessToken).to.be.a('string');
+    }
+  });
+
+  it('continues authentication when cache read fails', async function () {
+    mockCache.setShouldThrowOnGet(true);
+
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    expect(result.accessToken).to.be.a('string');
+    expect(result.refreshToken).to.be.a('string');
+  });
+
+  it('continues authentication when cache write fails', async function () {
+    mockCache.setShouldThrowOnSet(true);
+
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    expect(result.accessToken).to.be.a('string');
+    expect(result.refreshToken).to.be.a('string');
+  });
+
+  it('maintains backward compatibility when no tokenCache provided', async function () {
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      // No tokenCache provided
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    expect(result.accessToken).to.be.a('string');
+    expect(result.refreshToken).to.be.a('string');
+  });
+
+  it('uses cached token without expiresAt (assumes valid)', async function () {
+    const nonExpiringToken: OidcToken = {
+      accessToken: 'non-expiring-access-token',
+      refreshToken: 'non-expiring-refresh-token',
+      // No expiresAt - should be treated as valid
+    };
+
+    await mockCache.set(nonExpiringToken);
+
+    plugin = createMongoDBOIDCPlugin({
+      openBrowser: fetchBrowser,
+      tokenCache: mockCache,
+    });
+
+    const result = await requestToken(plugin, metadata);
+
+    expect(result.accessToken).to.equal('non-expiring-access-token');
   });
 });
 
