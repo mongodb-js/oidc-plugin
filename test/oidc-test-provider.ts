@@ -184,7 +184,12 @@ async function spawnBrowser(
   hideLogs?: boolean // For when real credentials are used in a flow
 ): Promise<Browser> {
   const options = {
-    capabilities: { browserName: 'chrome' },
+    capabilities: {
+      browserName: 'chrome',
+      'goog:chromeOptions': {
+        args: ['--disable-gpu-sandbox', '--disable-gpu'],
+      },
+    },
     waitforTimeout: 10_000,
     waitforInterval: 100,
     logLevel: hideLogs ? 'error' : 'info',
@@ -240,6 +245,8 @@ async function spawnBrowser(
               `--app=${url}`,
               '--disable-save-password-bubble',
               '--no-sandbox',
+              '--disable-gpu-sandbox',
+              '--disable-gpu',
             ],
           },
           'wdio:enforceWebDriverClassic': true,
