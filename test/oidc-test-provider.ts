@@ -189,6 +189,8 @@ async function spawnBrowser(
     '--disable-software-rasterizer',
     '--disable-gpu-compositing',
     '--disable-gpu-rasterization',
+    '--disable-accelerated-video-decode',
+    '--no-sandbox',
   ];
   const options = {
     capabilities: {
@@ -251,7 +253,6 @@ async function spawnBrowser(
             args: [
               `--app=${url}`,
               '--disable-save-password-bubble',
-              '--no-sandbox',
               ...chromeNoGpu,
             ],
           },
