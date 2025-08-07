@@ -183,17 +183,24 @@ async function spawnBrowser(
   url: string,
   hideLogs?: boolean // For when real credentials are used in a flow
 ): Promise<Browser> {
+  const chromeNoGpu = [
+    '--disable-gpu-sandbox',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-gpu-compositing',
+    '--disable-gpu-rasterization',
+  ];
   const options = {
     capabilities: {
       browserName: 'chrome',
       'goog:chromeOptions': {
-        args: ['--disable-gpu-sandbox', '--disable-gpu'],
+        args: chromeNoGpu,
       },
     },
     waitforTimeout: 10_000,
     waitforInterval: 100,
-    logLevel: hideLogs ? 'error' : 'info',
-  } as const;
+    logLevel: hideLogs ? ('error' as const) : ('info' as const),
+  };
 
   // We set ELECTRON_RUN_AS_NODE=1 for tests so that we can use
   // process.execPath to run scripts. Here, we want the actual, regular
@@ -245,8 +252,7 @@ async function spawnBrowser(
               `--app=${url}`,
               '--disable-save-password-bubble',
               '--no-sandbox',
-              '--disable-gpu-sandbox',
-              '--disable-gpu',
+              ...chromeNoGpu,
             ],
           },
           'wdio:enforceWebDriverClassic': true,
