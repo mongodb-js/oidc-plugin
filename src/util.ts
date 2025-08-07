@@ -260,6 +260,10 @@ export async function improveHTTPResponseBasedError<T>(
   const cause = getCause(err);
   if (cause) {
     try {
+      const statusObject =
+        'status' in cause ? cause : (err as Record<string, unknown>);
+      if (!statusObject.status) return err;
+
       let body = '';
       try {
         if ('text' in cause && typeof cause.text === 'function')
@@ -286,8 +290,6 @@ export async function improveHTTPResponseBasedError<T>(
       }
       if (!errorMessageFromBody) errorMessageFromBody = `: ${body}`;
 
-      const statusObject =
-        'status' in cause ? cause : (err as Record<string, unknown>);
       const statusTextInsert =
         'statusText' in statusObject
           ? `(${String(statusObject.statusText)})`
