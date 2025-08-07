@@ -6,6 +6,7 @@ import type {
 } from 'openid-client';
 import { MongoDBOIDCError, type OIDCAbortSignal } from './types';
 import { createHash, randomBytes } from 'crypto';
+import type { Readable } from 'stream';
 
 class AbortError extends Error {
   constructor() {
@@ -236,6 +237,18 @@ export class TokenSet {
   }
 }
 
+function getCause(err: unknown): Record<string, unknown> | undefined {
+  if (
+    err &&
+    typeof err === 'object' &&
+    'cause' in err &&
+    err.cause &&
+    typeof err.cause === 'object'
+  ) {
+    return err.cause as Record<string, unknown>;
+  }
+}
+
 // openid-client@6.x has reduced error messages for HTTP errors significantly, reducing e.g.
 // an HTTP error to just a simple 'unexpect HTTP response status code' message, without
 // further diagnostic information. So if the `cause` of an `err` object is a fetch `Response`
@@ -243,37 +256,46 @@ export class TokenSet {
 export async function improveHTTPResponseBasedError<T>(
   err: T
 ): Promise<T | MongoDBOIDCError> {
-  if (
-    err &&
-    typeof err === 'object' &&
-    'cause' in err &&
-    err.cause &&
-    typeof err.cause === 'object' &&
-    'status' in err.cause &&
-    'statusText' in err.cause &&
-    'text' in err.cause &&
-    typeof err.cause.text === 'function'
-  ) {
+  // Note: `err.cause` can either be an `Error` object itself, or a `Response`, or a JSON HTTP response body
+  const cause = getCause(err);
+  if (cause) {
     try {
       let body = '';
       try {
-        body = await err.cause.text();
+        if ('text' in cause && typeof cause.text === 'function')
+          body = await cause.text(); // Handle the `Response` case
       } catch {
         // ignore
       }
       let errorMessageFromBody = '';
       try {
-        const parsed = JSON.parse(body);
+        let parsed: Record<string, unknown> = cause;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          // ignore, and maybe `parsed` already contains the parsed JSON body anyway
+        }
         errorMessageFromBody =
-          ': ' + String(parsed.error_description || parsed.error || '');
+          ': ' +
+          [parsed.error, parsed.error_description]
+            .filter(Boolean)
+            .map(String)
+            .join(', ');
       } catch {
         // ignore
       }
       if (!errorMessageFromBody) errorMessageFromBody = `: ${body}`;
+
+      const statusObject =
+        'status' in cause ? cause : (err as Record<string, unknown>);
+      const statusTextInsert =
+        'statusText' in statusObject
+          ? `(${String(statusObject.statusText)})`
+          : '';
       return new MongoDBOIDCError(
         `${errorString(err)}: caused by HTTP response ${String(
-          err.cause.status
-        )} (${String(err.cause.statusText)})${errorMessageFromBody}`,
+          statusObject.status
+        )} ${statusTextInsert}${errorMessageFromBody}`,
         { codeName: 'HTTPResponseError', cause: err }
       );
     } catch {
@@ -281,4 +303,66 @@ export async function improveHTTPResponseBasedError<T>(
     }
   }
   return err;
+}
+
+// Check whether converting a Node.js `Readable` stream to a web `ReadableStream`
+// is possible. We use this for compatibility with fetch() implementations that
+// return Node.js `Readable` streams like node-fetch.
+export function streamIsNodeReadable(stream: unknown): stream is Readable {
+  return !!(
+    stream &&
+    typeof stream === 'object' &&
+    'pipe' in stream &&
+    typeof stream.pipe === 'function' &&
+    (!('cancel' in stream) || !stream.cancel)
+  );
+}
+
+export function nodeFetchCompat(
+  response: Response & { body: Readable | ReadableStream | null }
+): Response {
+  const notImplemented = (method: string) =>
+    new MongoDBOIDCError(`Not implemented: body.${method}`, {
+      codeName: 'HTTPBodyShimNotImplemented',
+    });
+  const { body, clone } = response;
+  if (streamIsNodeReadable(body)) {
+    // Provide ReadableStream methods that may be used by openid-client
+    Object.assign(
+      body,
+      {
+        locked: false,
+        cancel() {
+          body.resume();
+        },
+        getReader() {
+          throw notImplemented('getReader');
+        },
+        pipeThrough() {
+          throw notImplemented('pipeThrough');
+        },
+        pipeTo() {
+          throw notImplemented('pipeTo');
+        },
+        tee() {
+          throw notImplemented('tee');
+        },
+        values() {
+          throw notImplemented('values');
+        },
+      },
+      body
+    );
+    Object.assign(response, {
+      clone: function (this: Response): Response {
+        // node-fetch replaces `.body` on `.clone()` on *both*
+        // the original and the cloned Response objects
+        const cloned = clone.call(this);
+        nodeFetchCompat(this);
+        return nodeFetchCompat(cloned);
+      },
+    });
+  }
+
+  return response;
 }

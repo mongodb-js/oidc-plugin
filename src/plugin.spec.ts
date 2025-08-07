@@ -28,7 +28,11 @@ import { verifySuccessfulAuthCodeFlowLog } from '../test/log-hook-verification-h
 import { automaticRefreshTimeoutMS, MongoDBOIDCPluginImpl } from './plugin';
 import sinon from 'sinon';
 import { publicPluginToInternalPluginMap_DoNotUseOutsideOfTests } from './api';
-import type { Server as HTTPServer } from 'http';
+import type {
+  Server as HTTPServer,
+  ServerResponse,
+  IncomingMessage,
+} from 'http';
 import { createServer as createHTTPServer } from 'http';
 import type { AddressInfo } from 'net';
 import type {
@@ -1239,6 +1243,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
 describe('OIDC plugin (mock OIDC provider)', function () {
   let provider: OIDCMockProvider;
   let getTokenPayload: OIDCMockProviderConfig['getTokenPayload'];
+  let overrideRequestHandler: OIDCMockProviderConfig['overrideRequestHandler'];
   let additionalIssuerMetadata: OIDCMockProviderConfig['additionalIssuerMetadata'];
   let receivedHttpRequests: string[] = [];
   const tokenPayload = {
@@ -1264,8 +1269,13 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       additionalIssuerMetadata() {
         return additionalIssuerMetadata?.() ?? {};
       },
-      overrideRequestHandler(url: string) {
+      overrideRequestHandler(
+        url: string,
+        req: IncomingMessage,
+        res: ServerResponse
+      ) {
         receivedHttpRequests.push(url);
+        return overrideRequestHandler?.(url, req, res);
       },
     });
   });
@@ -1277,6 +1287,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
   beforeEach(function () {
     receivedHttpRequests = [];
     getTokenPayload = () => tokenPayload;
+    overrideRequestHandler = undefined;
     additionalIssuerMetadata = undefined;
   });
 
@@ -1531,6 +1542,40 @@ describe('OIDC plugin (mock OIDC provider)', function () {
         status: 500,
         statusText: 'Internal Server Error',
       });
+    });
+
+    it('handles JSON failure responses from the IDP', async function () {
+      overrideRequestHandler = (url, req, res) => {
+        if (new URL(url).pathname.endsWith('/token')) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'jsonfailure',
+              error_description: 'failure text',
+            })
+          );
+        }
+      };
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+        customFetch: sinon.stub().callsFake(fetch),
+      });
+
+      try {
+        await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.equal(
+          'server responded with an error in the response body: caused by HTTP response 400 : jsonfailure, failure text'
+        );
+      }
     });
   });
 });
