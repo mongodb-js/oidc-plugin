@@ -12,6 +12,7 @@ import {
   getRefreshTokenId,
   improveHTTPResponseBasedError,
   messageFromError,
+  nodeFetchCompat,
   normalizeObject,
   throwIfAborted,
   TokenSet,
@@ -405,7 +406,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     this.logger.emit('mongodb-oidc-plugin:outbound-http-request', { url });
 
     try {
-      const response = await this.doFetch(url, init);
+      const response = nodeFetchCompat(await this.doFetch(url, init));
       this.logger.emit('mongodb-oidc-plugin:outbound-http-request-completed', {
         url,
         status: response.status,
