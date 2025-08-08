@@ -329,27 +329,38 @@ export function nodeFetchCompat(
     });
   const { body, clone } = response;
   if (streamIsNodeReadable(body)) {
+    let webStream: ReadableStream | undefined;
+    const toWeb = () =>
+      webStream ?? (body.constructor as typeof Readable).toWeb?.(body);
     // Provide ReadableStream methods that may be used by openid-client
     Object.assign(
       body,
       {
         locked: false,
         cancel() {
+          if (webStream) return webStream.cancel();
           body.resume();
         },
-        getReader() {
+        getReader(...args: Parameters<ReadableStream['getReader']>) {
+          if ((webStream = toWeb())) return webStream.getReader(...args);
+
           throw notImplemented('getReader');
         },
-        pipeThrough() {
+        pipeThrough(...args: Parameters<ReadableStream['pipeThrough']>) {
+          if ((webStream = toWeb())) return webStream.pipeThrough(...args);
           throw notImplemented('pipeThrough');
         },
-        pipeTo() {
+        pipeTo(...args: Parameters<ReadableStream['pipeTo']>) {
+          if ((webStream = toWeb())) return webStream.pipeTo(...args);
+
           throw notImplemented('pipeTo');
         },
-        tee() {
+        tee(...args: Parameters<ReadableStream['tee']>) {
+          if ((webStream = toWeb())) return webStream.tee(...args);
           throw notImplemented('tee');
         },
-        values() {
+        values(...args: Parameters<ReadableStream['values']>) {
+          if ((webStream = toWeb())) return webStream.values(...args);
           throw notImplemented('values');
         },
       },
