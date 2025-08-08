@@ -1094,11 +1094,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
         console.info('skipping Okta integration tests due to missing config');
         return this.skip();
       }
-      if (process.env.EVR_TASK_ID && process.platform === 'darwin') {
-        // TODO(MONGOSH-2335): Unskip Okta integration tests on macOS in Evergreen
+      if (
+        process.env.EVR_TASK_ID &&
+        ['darwin', 'win32'].includes(process.platform)
+      ) {
+        // TODO(MONGOSH-2335): Unskip Okta integration tests on macOS/Windows in Evergreen
         // eslint-disable-next-line no-console
         console.info(
-          'skipping Okta integration tests on macOS in Evergreen MONGOSH-2335'
+          'skipping Okta integration tests on macOS/Windows in Evergreen MONGOSH-2335'
         );
         return this.skip();
       }
@@ -1177,11 +1180,14 @@ describe('OIDC plugin (local OIDC provider)', function () {
         return this.skip();
       }
 
-      if (process.env.EVR_TASK_ID && process.platform === 'darwin') {
-        // TODO(MONGOSH-2335): Unskip Azure integration tests on macOS in Evergreen
+      if (
+        process.env.EVR_TASK_ID &&
+        ['darwin', 'win32'].includes(process.platform)
+      ) {
+        // TODO(MONGOSH-2335): Unskip Azure integration tests on macOS/Windows in Evergreen
         // eslint-disable-next-line no-console
         console.info(
-          'skipping Azure integration tests on macOS in Evergreen MONGOSH-2335'
+          'skipping Azure integration tests on macOS/Windows in Evergreen MONGOSH-2335'
         );
         return this.skip();
       }
