@@ -1454,6 +1454,51 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       expect(allOutboundRequests).to.deep.equal(allInboundRequests);
     });
 
+    // Regression test for https://jira.mongodb.org/browse/MONGOSH-2444
+    it('correctly keeps tracking after serialization and deserialization', async function () {
+      const tokenEndpointRequests: any[] = [];
+      let serializedState: string | undefined;
+
+      getTokenPayload = () => {
+        return { ...tokenPayload, expires_in: 5 };
+      };
+
+      const runPlugin = async () => {
+        const plugin = createMongoDBOIDCPlugin({
+          openBrowserTimeout: 60_000,
+          openBrowser: fetchBrowser,
+          allowedFlows: ['auth-code'],
+          redirectURI: 'http://localhost:0/callback',
+          serializedState,
+          throwOnIncompatibleSerializedState: true,
+        });
+
+        plugin.logger.on(
+          'mongodb-oidc-plugin:outbound-http-request-completed',
+          (ev) => {
+            if (
+              ev.status === 200 &&
+              new URL(ev.url).pathname.endsWith('/token')
+            )
+              tokenEndpointRequests.push(ev);
+          }
+        );
+
+        await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        serializedState = await plugin.serialize();
+      };
+
+      expect(tokenEndpointRequests).to.have.lengthOf(0);
+      await runPlugin();
+      expect(tokenEndpointRequests).to.have.lengthOf(1);
+      await runPlugin();
+      expect(tokenEndpointRequests).to.have.lengthOf(2);
+    });
+
     it('allows node-fetch as a custom HTTP fetch client', async function () {
       const customFetch = sinon.stub().callsFake(fetch);
       const plugin = createMongoDBOIDCPlugin({

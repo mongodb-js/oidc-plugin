@@ -487,6 +487,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           redirect_uri: redirectURI,
         }
       );
+      config[customFetch] = this.fetch;
       if (
         validateSecureHTTPUrl(config.serverMetadata().issuer, 'issuer') ===
         'http-allowed'
@@ -543,6 +544,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       'token_endpoint'
     );
     validateSecureHTTPUrl(config.serverMetadata().jwks_uri, 'jwks_uri');
+
+    // Should already have been set by the discovery call, but doesn't hurt to make sure
+    config[customFetch] = this.fetch;
 
     state.config = config;
     return {
