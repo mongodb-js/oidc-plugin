@@ -1643,6 +1643,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
         (ev) => outboundHTTPRequestsFailed.push(ev)
       );
 
+      let selfSignedReason = 'self-signed certificate';
       try {
         await requestToken(plugin, {
           issuer: `https://localhost:${port}/`,
@@ -1651,8 +1652,12 @@ describe('OIDC plugin (mock OIDC provider)', function () {
         });
         expect.fail('missed exception');
       } catch (err: any) {
+        // Electron and Node.js provide different error messages
+        selfSignedReason = err.message.includes('self-signed certificate')
+          ? 'self-signed certificate'
+          : 'self signed certificate';
         expect(err.message).to.include(
-          `Unable to fetch issuer metadata for "https://localhost:${port}/": something went wrong (caused by: request to https://localhost:${port}/.well-known/openid-configuration failed, reason: self-signed certificate`
+          `Unable to fetch issuer metadata for "https://localhost:${port}/": something went wrong (caused by: request to https://localhost:${port}/.well-known/openid-configuration failed, reason: ${selfSignedReason}`
         );
       }
       const entry = outboundHTTPRequestsFailed.find(
@@ -1661,7 +1666,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
           `https://localhost:${port}/.well-known/openid-configuration`
       );
       expect(entry).to.exist;
-      expect(entry.error).to.include('self-signed certificate');
+      expect(entry.error).to.include(selfSignedReason);
     });
 
     it('handles JSON failure responses from the IDP', async function () {
