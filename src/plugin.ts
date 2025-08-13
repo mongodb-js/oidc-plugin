@@ -11,7 +11,6 @@ import {
   errorString,
   getRefreshTokenId,
   improveHTTPResponseBasedError,
-  messageFromError,
   nodeFetchCompat,
   normalizeObject,
   throwIfAborted,
@@ -525,7 +524,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       throw new MongoDBOIDCError(
         `Unable to fetch issuer metadata for ${JSON.stringify(
           serverMetadata.issuer
-        )}: ${messageFromError(err)}`,
+        )}: ${errorString(err)}`,
         {
           cause: err,
           codeName: 'IssuerMetadataDiscoveryFailed',
@@ -844,7 +843,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
                 browserHandle?.once('error', (err) =>
                   reject(
                     new MongoDBOIDCError(
-                      `Opening browser failed with '${messageFromError(
+                      `Opening browser failed with '${errorString(
                         err
                       )}'${extraErrorInfo()}`,
                       { cause: err, codeName: 'BrowserOpenFailedSpawnError' }

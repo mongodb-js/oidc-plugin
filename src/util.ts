@@ -47,12 +47,6 @@ export async function withAbortCheck<
   }
 }
 
-export function errorString(err: unknown): string {
-  return String(
-    typeof err === 'object' && err && 'message' in err ? err.message : err
-  );
-}
-
 // AbortSignal.timeout, but consistently .unref()ed
 export function timeoutSignal(ms: number): AbortSignal {
   const controller = new AbortController();
@@ -127,15 +121,26 @@ export function validateSecureHTTPUrl(
   }
 }
 
-export function messageFromError(err: unknown): string {
-  return String(
-    err &&
-      typeof err === 'object' &&
-      'message' in err &&
-      typeof err.message === 'string'
-      ? err.message
-      : err
-  );
+export function errorString(err: unknown): string {
+  if (
+    !err ||
+    typeof err !== 'object' ||
+    !('message' in err) ||
+    typeof err.message !== 'string'
+  ) {
+    return String(err);
+  }
+  const cause = getCause(err);
+  let { message } = err;
+  if (cause) {
+    const causeMessage = errorString(cause);
+    if (
+      !message.includes(causeMessage) &&
+      !causeMessage.match(/^\[object.+\]$/i)
+    )
+      message += ` (caused by: ${causeMessage})`;
+  }
+  return message;
 }
 
 const salt = randomBytes(16);
