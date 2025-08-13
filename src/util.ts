@@ -134,7 +134,10 @@ export function errorString(err: unknown): string {
   let { message } = err;
   if (cause) {
     const causeMessage = errorString(cause);
-    if (!message.includes(causeMessage) && !causeMessage.match(/\[object.+\]/i))
+    if (
+      !message.includes(causeMessage) &&
+      !causeMessage.match(/^\[object.+\]$/i)
+    )
       message += ` (caused by: ${causeMessage})`;
   }
   return message;
