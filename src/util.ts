@@ -128,17 +128,13 @@ export function errorString(err: unknown): string {
     !('message' in err) ||
     typeof err.message !== 'string'
   ) {
-    const asString = String(err);
-    if (asString.toLowerCase() === '[object object]')
-      return JSON.stringify(err);
-
-    return asString;
+    return String(err);
   }
   const cause = getCause(err);
   let { message } = err;
   if (cause) {
     const causeMessage = errorString(cause);
-    if (!message.includes(causeMessage))
+    if (!message.includes(causeMessage) && !causeMessage.match(/\[object.+\]/i))
       message += ` (caused by: ${causeMessage})`;
   }
   return message;
