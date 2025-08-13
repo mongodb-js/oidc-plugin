@@ -128,14 +128,26 @@ export function validateSecureHTTPUrl(
 }
 
 export function messageFromError(err: unknown): string {
-  return String(
-    err &&
-      typeof err === 'object' &&
-      'message' in err &&
-      typeof err.message === 'string'
-      ? err.message
-      : err
-  );
+  if (
+    !err ||
+    typeof err !== 'object' ||
+    !('message' in err) ||
+    typeof err.message !== 'string'
+  ) {
+    const asString = String(err);
+    if (asString.toLowerCase() === '[object object]')
+      return JSON.stringify(err);
+
+    return asString;
+  }
+  const cause = getCause(err);
+  let { message } = err;
+  if (cause) {
+    const causeMessage = messageFromError(cause);
+    if (!message.includes(causeMessage))
+      message += ` (caused by: ${causeMessage})`;
+  }
+  return message;
 }
 
 const salt = randomBytes(16);

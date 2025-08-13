@@ -40,6 +40,8 @@ import type {
   TokenMetadata,
 } from '@mongodb-js/oidc-mock-provider';
 import { OIDCMockProvider } from '@mongodb-js/oidc-mock-provider';
+import type { Server as HTTPSServer } from 'https';
+import { createServer as createHTTPSServer } from 'https';
 
 // node-fetch@3 is ESM-only...
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -1417,6 +1419,36 @@ describe('OIDC plugin (mock OIDC provider)', function () {
   });
 
   context('HTTP request handling', function () {
+    let badHTTPSServer: HTTPSServer;
+
+    before(async function () {
+      badHTTPSServer = createHTTPSServer(
+        {
+          key: await fs.readFile(
+            // https://github.com/nodejs/node/blob/becb55aac3f7eb93b03223744c35c6194f11e3e9/test/fixtures/keys/agent2-key.pem
+            path.resolve(__dirname, '..', 'test', 'self-signed-key.pem')
+          ),
+          cert: await fs.readFile(
+            // https://github.com/nodejs/node/blob/becb55aac3f7eb93b03223744c35c6194f11e3e9/test/fixtures/keys/agent2-cert.pem
+            path.resolve(__dirname, '..', 'test', 'self-signed-cert.pem')
+          ),
+        },
+        (req, res) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Hello World' }));
+        }
+      );
+      badHTTPSServer.listen(0, 'localhost');
+      await once(badHTTPSServer, 'listening');
+    });
+
+    after(async function () {
+      if (badHTTPSServer) {
+        badHTTPSServer.close();
+        await once(badHTTPSServer, 'close');
+      }
+    });
+
     it('will track all outgoing HTTP requests', async function () {
       const pluginHttpRequests: string[] = [];
       const localServerHttpRequests: string[] = [];
@@ -1555,7 +1587,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       expect(customFetch).to.have.been.called;
     });
 
-    it('logs helpful error messages', async function () {
+    it('logs helpful error messages for HTTP failures', async function () {
       const outboundHTTPRequestsCompleted: any[] = [];
 
       getTokenPayload = () => Promise.reject(new Error('test failure'));
@@ -1593,6 +1625,43 @@ describe('OIDC plugin (mock OIDC provider)', function () {
         status: 500,
         statusText: 'Internal Server Error',
       });
+    });
+
+    it('logs helpful error messages for TLS failures', async function () {
+      const outboundHTTPRequestsFailed: any[] = [];
+      const port = (badHTTPSServer.address() as AddressInfo).port;
+
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+
+      plugin.logger.on(
+        'mongodb-oidc-plugin:outbound-http-request-failed',
+        (ev) => outboundHTTPRequestsFailed.push(ev)
+      );
+
+      try {
+        await requestToken(plugin, {
+          issuer: `https://localhost:${port}/`,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.include(
+          `Unable to fetch issuer metadata for "https://localhost:${port}/": something went wrong (caused by: request to https://localhost:${port}/.well-known/openid-configuration failed, reason: self-signed certificate`
+        );
+      }
+      const entry = outboundHTTPRequestsFailed.find(
+        (ev) =>
+          ev.url ===
+          `https://localhost:${port}/.well-known/openid-configuration`
+      );
+      expect(entry).to.exist;
+      expect(entry.error).to.include('self-signed certificate');
     });
 
     it('handles JSON failure responses from the IDP', async function () {
