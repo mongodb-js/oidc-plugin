@@ -81,7 +81,7 @@ export interface MongoDBOIDCLogEventsMap {
   }) => void;
   'mongodb-oidc-plugin:skip-auth-attempt': (event: {
     authStateId: string;
-    reason: string;
+    reason: 'not-expired' | 'not-expired-refresh-failed' | 'refresh-succeeded';
   }) => void;
   'mongodb-oidc-plugin:auth-failed': (event: {
     authStateId: string;
