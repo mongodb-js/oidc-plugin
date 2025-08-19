@@ -29,7 +29,7 @@
   },
   "types": "./index.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run compile",
+    "prepare": "npm run compile",
     "compile": "tsc -p tsconfig.json && api-extractor run && rimraf 'dist/**/*.d.ts*' && gen-esm-wrapper . ./dist/.esm-wrapper.mjs",
     "typecheck": "tsc -p tsconfig-lint.json --noEmit",
     "eslint": "eslint",
@@ -43,9 +43,7 @@
     "test-cov": "nyc -x \"**/*.spec.*\" --reporter=lcov --reporter=text --reporter=html npm run test",
     "test-watch": "npm run test -- --watch",
     "test-ci": "npm run test-cov",
-    "reformat": "npm run prettier -- --write . && npm run eslint . -- --fix",
-    "prepare": "husky install || true",
-    "precommit": "precommit"
+    "reformat": "npm run prettier -- --write . && npm run eslint . -- --fix"
   },
   "devDependencies": {
     "@microsoft/api-extractor": "^7.52.8",
