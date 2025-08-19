@@ -964,20 +964,20 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
     try {
       get_tokens: {
-        if (
-          !forceRefreshOrReauth &&
-          tokenExpiryInSeconds(
-            state.currentTokenSet?.set,
-            passIdTokenAsAccessToken
-          ) >
-            5 * 60
-        ) {
+        const currentSetExpiresInSeconds = tokenExpiryInSeconds(
+          state.currentTokenSet?.set,
+          passIdTokenAsAccessToken
+        );
+        // If the current token set has a decent amount of validity, just keep using it.
+        if (!forceRefreshOrReauth && currentSetExpiresInSeconds > 5 * 60) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
             authStateId: state.id,
             reason: 'not-expired',
           });
           break get_tokens;
         }
+        // If the current token set is close to expiry, try to acquire a fresh token
+        // if possible.
         if (await state.currentTokenSet?.tryRefresh?.()) {
           this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
             authStateId: state.id,
@@ -985,6 +985,25 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
           });
           break get_tokens;
         }
+        // If the current token set is close to expiry, and refreshing failed, that can
+        // just mean that the token refresh mechanism are not available.
+        // We want to avoid a situation in which two initiateAuthAttempt() calls are made
+        // right after each other, the token returned from the first one has a short validity
+        // (i.e. up to or less than 5 minutes), and the second one then ignores the token
+        // from the first one, effectively keeping the user in a loop of 'overly' eager
+        // re-authentication interactions.
+        // This means we effectively have a minimum requirement of tokens being valid
+        // for at least 10 seconds after being issued OR a working token refresh flow, which
+        // seems like a reasonable expectation.
+        if (!forceRefreshOrReauth && currentSetExpiresInSeconds > 10) {
+          this.logger.emit('mongodb-oidc-plugin:skip-auth-attempt', {
+            authStateId: state.id,
+            reason: 'not-expired-refresh-failed',
+          });
+          break get_tokens;
+        }
+        // If no automatic mechanism for acquiring a token is available, we need to start
+        // an authentication flow that (typically) involves user interaction.
         state.currentTokenSet = null;
         let error;
         const currentAllowedFlowSet = await this.getAllowedFlows({ signal });
