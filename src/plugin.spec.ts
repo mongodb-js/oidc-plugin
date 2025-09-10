@@ -1299,6 +1299,41 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     additionalIssuerMetadata = undefined;
   });
 
+  context('with a broken token refresh flow', function () {
+    let plugin: MongoDBOIDCPlugin;
+
+    beforeEach(function () {
+      plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+
+      overrideRequestHandler = (url, req, res) => {
+        if (new URL(url).searchParams.get('grant_type') === 'refresh_token') {
+          res.writeHead(500);
+          res.end('Internal Server Error');
+        }
+      };
+    });
+
+    it('will keep using an unexpired token if the refresh endpoint is broken even if refresh is overdue', async function () {
+      getTokenPayload = () => {
+        return { ...tokenPayload, expires_in: 60 /* one minute */ };
+      };
+      const req = async () =>
+        await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+      const result1 = await req();
+      const result2 = await req();
+      expect(result1).to.deep.equal(result2);
+    });
+  });
+
   context('with different supported built-in scopes', function () {
     let getScopes: () => Promise<string[]>;
 
