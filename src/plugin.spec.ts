@@ -1704,7 +1704,7 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       expect(entry.error).to.include(selfSignedReason);
     });
 
-    it.only('logs helpful error messages for OIDC token parse failures', async function () {
+    it('logs helpful error messages for OIDC token parse failures', async function () {
       getTokenPayload = () => ({
         expires_in: tokenPayload.expires_in,
         payload: { ...tokenPayload.payload, nonce: undefined },
