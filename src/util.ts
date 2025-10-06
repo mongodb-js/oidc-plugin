@@ -254,20 +254,30 @@ function getCause(err: unknown): Record<string, unknown> | undefined {
   }
 }
 
+function wrapGenericError(err: unknown): MongoDBOIDCError {
+  if (MongoDBOIDCError.isMongoDBOIDCError(err)) return err;
+  return new MongoDBOIDCError(errorString(err), {
+    codeName: 'GenericError',
+    cause: err,
+  });
+}
+
 // openid-client@6.x has reduced error messages for HTTP errors significantly, reducing e.g.
 // an HTTP error to just a simple 'unexpect HTTP response status code' message, without
 // further diagnostic information. So if the `cause` of an `err` object is a fetch `Response`
 // object, we try to throw a more helpful error.
 export async function improveHTTPResponseBasedError<T>(
   err: T
-): Promise<T | MongoDBOIDCError> {
+): Promise<MongoDBOIDCError> {
   // Note: `err.cause` can either be an `Error` object itself, or a `Response`, or a JSON HTTP response body
   const cause = getCause(err);
   if (cause) {
     try {
       const statusObject =
         'status' in cause ? cause : (err as Record<string, unknown>);
-      if (!statusObject.status) return err;
+      if (!statusObject.status) {
+        return wrapGenericError(err);
+      }
 
       let body = '';
       try {
@@ -306,10 +316,10 @@ export async function improveHTTPResponseBasedError<T>(
         { codeName: 'HTTPResponseError', cause: err }
       );
     } catch {
-      return err;
+      return wrapGenericError(err);
     }
   }
-  return err;
+  return wrapGenericError(err);
 }
 
 // Check whether converting a Node.js `Readable` stream to a web `ReadableStream`

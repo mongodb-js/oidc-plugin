@@ -1704,6 +1704,32 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       expect(entry.error).to.include(selfSignedReason);
     });
 
+    it('logs helpful error messages for OIDC token parse failures', async function () {
+      getTokenPayload = () => ({
+        expires_in: tokenPayload.expires_in,
+        payload: { ...tokenPayload.payload, nonce: undefined },
+      });
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+      });
+
+      try {
+        await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        expect.fail('missed exception');
+      } catch (err: any) {
+        expect(err.message).to.equal(
+          'invalid response encountered (caused by: JWT "nonce" (nonce) claim missing)'
+        );
+      }
+    });
+
     it('handles JSON failure responses from the IDP', async function () {
       overrideRequestHandler = (url, req, res) => {
         if (new URL(url).pathname.endsWith('/token')) {
