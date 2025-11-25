@@ -451,6 +451,7 @@ export async function oktaBrowserAuthCodeFlow({
     browser = await spawnBrowser(url, true);
     await waitForTitle(browser, 'Sign In', 'h2');
     await ensureValue(browser, 'input[name="identifier"]', username);
+    await browser.$('input[type="submit"]').click();
     await ensureValue(browser, 'input[name="credentials.passcode"]', password);
     await browser.$('input[type="submit"]').click();
     await waitForLocalhostRedirect(browser);
@@ -480,6 +481,7 @@ export async function oktaBrowserDeviceAuthFlow({
 
     await waitForTitle(browser, 'Sign In', 'h2');
     await ensureValue(browser, 'input[name="identifier"]', username);
+    await browser.$('input[type="submit"]').click();
     await ensureValue(browser, 'input[name="credentials.passcode"]', password);
     await browser.$('input[type="submit"]').click();
 
