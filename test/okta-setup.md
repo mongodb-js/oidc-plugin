@@ -6,6 +6,9 @@ Start with creating a **free integrator account** at https://developer.okta.com/
 When you go to that page, make sure that you don't create an Auth0 free account,
 but a **Free Integrator Account**.
 
+> If you don't want to setup Okta Verify in your phone, you can use Okta Verify
+> in your work laptop.
+
 ## 1. Set up Okta application
 
 1. In your Okta developer dashboard, select "Applications → Applications" in the sidebar
