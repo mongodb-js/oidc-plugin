@@ -589,12 +589,17 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
       return await defaultOpener(options);
     }
     if (typeof this.options.openBrowser?.command === 'string') {
-      const child = spawn(this.options.openBrowser.command, [options.url], {
-        shell: true,
-        stdio: 'ignore',
-        detached: true,
-        signal: this.options.openBrowser.abortable ? options.signal : undefined,
-      });
+      const child = spawn(
+        `${this.options.openBrowser.command} ${options.url}`,
+        {
+          shell: true,
+          stdio: 'ignore',
+          detached: true,
+          signal: this.options.openBrowser.abortable
+            ? options.signal
+            : undefined,
+        }
+      );
       child.unref();
       return child;
     }
