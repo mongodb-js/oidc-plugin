@@ -1734,6 +1734,63 @@ describe('OIDC plugin (mock OIDC provider)', function () {
       }
     });
 
+    describe('discoveryAlgorithm', function () {
+      it('uses the OIDC discovery endpoint by default', async function () {
+        const outboundRequests: string[] = [];
+        const plugin = createMongoDBOIDCPlugin({
+          openBrowserTimeout: 60_000,
+          openBrowser: fetchBrowser,
+          allowedFlows: ['auth-code'],
+          redirectURI: 'http://localhost:0/callback',
+        });
+        plugin.logger.on('mongodb-oidc-plugin:outbound-http-request', (ev) =>
+          outboundRequests.push(ev.url)
+        );
+        await requestToken(plugin, {
+          issuer: provider.issuer,
+          clientId: 'mockclientid',
+          requestScopes: [],
+        });
+        expect(outboundRequests).to.include(
+          `${provider.issuer}/.well-known/openid-configuration`
+        );
+        expect(outboundRequests).not.to.include(
+          `${provider.issuer}/.well-known/oauth-authorization-server`
+        );
+      });
+
+      it('uses the OAuth 2.0 discovery endpoint when set to "oauth2"', async function () {
+        const outboundRequests: string[] = [];
+        const plugin = createMongoDBOIDCPlugin({
+          openBrowserTimeout: 60_000,
+          openBrowser: fetchBrowser,
+          allowedFlows: ['auth-code'],
+          redirectURI: 'http://localhost:0/callback',
+          discoveryAlgorithm: 'oauth2',
+        });
+        plugin.logger.on('mongodb-oidc-plugin:outbound-http-request', (ev) =>
+          outboundRequests.push(ev.url)
+        );
+        // The mock provider does not serve `/.well-known/oauth-authorization-server`,
+        // so discovery fails — we only need to assert which URL was requested.
+        try {
+          await requestToken(plugin, {
+            issuer: provider.issuer,
+            clientId: 'mockclientid',
+            requestScopes: [],
+          });
+        } catch {
+          /* expected */
+        }
+        expect(outboundRequests).to.include(
+          `${provider.issuer}/.well-known/oauth-authorization-server`
+        );
+        expect(outboundRequests).not.to.include(
+          `${provider.issuer}/.well-known/openid-configuration`
+        );
+      });
+    });
+
     it('handles JSON failure responses from the IDP', async function () {
       overrideRequestHandler = (url, req, res) => {
         if (new URL(url).pathname.endsWith('/token')) {
