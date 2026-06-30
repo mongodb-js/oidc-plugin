@@ -217,6 +217,17 @@ export interface MongoDBOIDCPluginOptions {
    * Default is `false`.
    */
   skipNonceInAuthCodeRequest?: boolean;
+
+  /**
+   * The issuer metadata discovery algorithm to use, mirroring the option of
+   * the same name in `openid-client`.
+   *
+   * - `'oidc'` (default) resolves to `<issuer>/.well-known/openid-configuration`
+   *   per OpenID Connect Discovery 1.0.
+   * - `'oauth2'` resolves to `<issuer>/.well-known/oauth-authorization-server`
+   *   per RFC 8414.
+   */
+  discoveryAlgorithm?: 'oidc' | 'oauth2';
 }
 
 /** @public */

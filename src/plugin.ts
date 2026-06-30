@@ -504,6 +504,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const discoveryOptions = {
       [customFetch]: this.fetch,
       execute: httpAllowed === 'http-allowed' ? [allowInsecureRequests] : [],
+      ...(this.options.discoveryAlgorithm
+        ? { algorithm: this.options.discoveryAlgorithm }
+        : {}),
     };
     let config: Configuration;
     try {
