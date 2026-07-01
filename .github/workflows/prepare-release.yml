@@ -32,6 +32,11 @@ jobs:
         with:
           node-version: 20.x
 
+      - name: Install npm 11
+        run: |
+          npm install -g npm@11
+          npm -v
+
       - name: Bump version
         run: |
           echo "new-version=$(npm version ${{ github.event.inputs.exact_version || github.event.inputs.version_update_type }} --no-git-tag-version)" >> $GITHUB_OUTPUT
