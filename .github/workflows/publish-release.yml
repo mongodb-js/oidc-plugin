@@ -68,5 +68,5 @@ jobs:
           name: ${{ steps.get-version.outputs.package_version }}
           commit: main
           tag: v${{ steps.get-version.outputs.package_version }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           draft: false
