@@ -3,6 +3,10 @@ name: Publish Release
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
 jobs:
   publish:
     name: Publish Release
@@ -33,8 +37,6 @@ jobs:
 
       - name: Publish
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Read Version
         id: get-version
