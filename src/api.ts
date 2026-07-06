@@ -228,6 +228,16 @@ export interface MongoDBOIDCPluginOptions {
    *   per RFC 8414.
    */
   discoveryAlgorithm?: 'oidc' | 'oauth2';
+
+  /**
+   * The default scopes to request
+   *
+   * The default value is `['openid', 'offline_access']`.
+   * This will be reduced if the scopes are not supported by the auth server,
+   * but `scopes_supported` is optional per RFC 9728, so the plugin might not be able
+   * to determine the supported scopes.
+   */
+  defaultScopes?: string[];
 }
 
 /** @public */

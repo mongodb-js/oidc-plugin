@@ -473,7 +473,8 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     const makeScope = (idpMetadata: AuthorizationServerMetadata) =>
       [
         ...new Set([
-          ...this.getSupportedDefaultScopes(idpMetadata),
+          ...(this.options.defaultScopes ??
+            this.getSupportedDefaultScopes(idpMetadata)),
           ...(serverMetadata.requestScopes ?? []),
         ]),
       ].join(' ');

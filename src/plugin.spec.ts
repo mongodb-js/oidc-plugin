@@ -1366,6 +1366,43 @@ describe('OIDC plugin (mock OIDC provider)', function () {
     });
   });
 
+  context('with options.defaultScopes', function () {
+    async function getScopes(
+      pluginOptions: Partial<MongoDBOIDCPluginOptions>,
+      idpInfo: Partial<IdPServerInfo> = {}
+    ): Promise<string[]> {
+      const plugin = createMongoDBOIDCPlugin({
+        openBrowserTimeout: 60_000,
+        openBrowser: fetchBrowser,
+        allowedFlows: ['auth-code'],
+        redirectURI: 'http://localhost:0/callback',
+        ...pluginOptions,
+      });
+      const result = await requestToken(plugin, {
+        issuer: provider.issuer,
+        clientId: 'mockclientid',
+        requestScopes: [],
+        ...idpInfo,
+      });
+      return String(getJWTContents(result.accessToken).scope).split(' ').sort();
+    }
+
+    it('replaces the built-in defaults when set (opts out of openid)', async function () {
+      expect(
+        await getScopes({ defaultScopes: ['offline_access'] })
+      ).to.deep.equal(['offline_access']);
+    });
+
+    it('unions defaultScopes with server-supplied requestScopes', async function () {
+      expect(
+        await getScopes(
+          { defaultScopes: ['offline_access'] },
+          { requestScopes: ['servergroup'] }
+        )
+      ).to.deep.equal(['offline_access', 'servergroup']);
+    });
+  });
+
   context('when drivers re-request tokens early', function () {
     let plugin: MongoDBOIDCPlugin;
 
