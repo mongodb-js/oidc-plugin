@@ -541,10 +541,11 @@ export async function azureBrowserDeviceAuthFlow({
 
     await waitForTitle(
       browser,
-      /Are you trying to sign in to/i,
+      /Approve sign-in on another device/i,
       'div[role="heading"]'
     );
-    await browser.$('input[type="submit"]').click();
+    // Note: the submit button on this page is "This wasn't me".
+    await browser.$('#idBtn_Approve').click();
 
     await waitForTitle(browser, /^[a-zA-Z0-9_]+$/, 'div[role="heading"]');
   } finally {
