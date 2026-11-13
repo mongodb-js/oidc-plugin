@@ -13,7 +13,7 @@ import { MongoClient } from 'mongodb';
 import type { OpenBrowserOptions } from './';
 import { createMongoDBOIDCPlugin } from './';
 import { OIDCMockProvider } from '@mongodb-js/oidc-mock-provider';
-import { MongoCluster } from 'mongodb-runner';
+import { MongoCluster } from '@mongodb-js/mongodb-runner';
 import path from 'path';
 import sinon from 'sinon';
 
