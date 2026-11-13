@@ -102,8 +102,8 @@ tasks:
 
 buildvariants:
   - name: ubuntu_x64_test
-    display_name: 'Ubuntu 20.04 x64'
-    run_on: ubuntu2004-small
+    display_name: 'Ubuntu 22.04 x64'
+    run_on: ubuntu2204-small
     tasks:
       - test
       - test_electron
