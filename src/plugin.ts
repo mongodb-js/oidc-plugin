@@ -301,18 +301,27 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
   // Separate method so we can re-use the inferred return type in _deserialize()
   private _serialize() {
+    const omitAccessToken = this.options.omitAccessToken === true;
     return {
       oidcPluginStateVersion: 1,
       state: [...this.mapIdpToAuthState]
         .filter(([, state]) => !!state.currentTokenSet)
         .map(([key, state]) => {
+          const tokenSet = state.currentTokenSet?.set?.serialize();
+          if (tokenSet && omitAccessToken) {
+            const serializableTokenSet = tokenSet as Record<string, unknown>;
+            delete serializableTokenSet.access_token;
+            // Without the access token, the stored expiry is meaningless.
+            // Force the plugin to obtain a new one using the refresh token.
+            serializableTokenSet.expiresAt = 0;
+          }
           return [
             key,
             {
               id: state.id,
               serverOIDCMetadata: { ...state.serverOIDCMetadata },
               currentTokenSet: {
-                set: state.currentTokenSet?.set?.serialize(),
+                set: tokenSet,
               },
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }

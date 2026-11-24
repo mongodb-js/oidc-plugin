@@ -473,6 +473,68 @@ describe('OIDC plugin (local OIDC provider)', function () {
         ]);
       });
 
+      it('includes the access token in the serialized state by default', async function () {
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        const serializedData = JSON.parse(
+          Buffer.from(await plugin.serialize(), 'base64').toString('utf8')
+        );
+        expect(serializedData.state[0][1].currentTokenSet.set).to.have.property(
+          'access_token'
+        );
+      });
+
+      it('can omit the access token from the serialized state', async function () {
+        const pluginWithoutAccessToken = createMongoDBOIDCPlugin({
+          ...pluginOptions,
+          omitAccessToken: true,
+        });
+        await requestToken(
+          pluginWithoutAccessToken,
+          provider.getMongodbOIDCDBInfo()
+        );
+        const serializedData = JSON.parse(
+          Buffer.from(
+            await pluginWithoutAccessToken.serialize(),
+            'base64'
+          ).toString('utf8')
+        );
+        const tokenSet = serializedData.state[0][1].currentTokenSet.set;
+        expect(tokenSet).to.not.have.property('access_token');
+        expect(tokenSet).to.have.property('refresh_token');
+        expect(tokenSet).to.have.property('expiresAt', 0);
+      });
+
+      it('refreshes the access token when it was omitted from the serialized state', async function () {
+        const pluginWithoutAccessToken = createMongoDBOIDCPlugin({
+          ...pluginOptions,
+          omitAccessToken: true,
+        });
+        const result1 = await requestToken(
+          pluginWithoutAccessToken,
+          provider.getMongodbOIDCDBInfo()
+        );
+        const skipAuthAttemptEvent = once(
+          logger,
+          'mongodb-oidc-plugin:skip-auth-attempt'
+        );
+        const restoredPlugin = createMongoDBOIDCPlugin({
+          ...pluginOptions,
+          omitAccessToken: true,
+          serializedState: await pluginWithoutAccessToken.serialize(),
+        });
+        const result2 = await requestToken(
+          restoredPlugin,
+          provider.getMongodbOIDCDBInfo()
+        );
+        expect(result1).to.not.deep.equal(result2);
+        expect(getJWTContents(result1.accessToken).sub).to.equal(
+          getJWTContents(result2.accessToken).sub
+        );
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'refresh-succeeded', authStateId: '0' },
+        ]);
+      });
+
       it('rejects invalid serialized state', async function () {
         const error = once(
           logger,
