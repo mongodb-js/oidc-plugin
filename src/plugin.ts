@@ -26,6 +26,7 @@ import type {
   DeviceFlowInformation,
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,
+  MongoDBOIDCSerializeOptions,
   OpenBrowserOptions,
   OpenBrowserReturnType,
 } from './api';
@@ -300,8 +301,9 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   // Separate method so we can re-use the inferred return type in _deserialize()
-  private _serialize() {
-    const omitAccessToken = this.options.omitAccessToken === true;
+  private _serialize({
+    omitAccessToken = false,
+  }: MongoDBOIDCSerializeOptions = {}) {
     return {
       oidcPluginStateVersion: 1,
       state: [...this.mapIdpToAuthState]
@@ -333,12 +335,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     } as const;
   }
 
-  public serialize(): Promise<string> {
+  public serialize(options?: MongoDBOIDCSerializeOptions): Promise<string> {
     // Wrap the result using JS-to-JSON-to-UTF8-to-Base64. We could probably
     // omit the base64 encoding, but this makes it clearer that it's an opaque
     // value that's not intended to be inspected or modified.
     return Promise.resolve(
-      Buffer.from(JSON.stringify(this._serialize()), 'utf8').toString('base64')
+      Buffer.from(JSON.stringify(this._serialize(options)), 'utf8').toString(
+        'base64'
+      )
     );
   }
 

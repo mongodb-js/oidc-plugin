@@ -484,17 +484,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
       });
 
       it('can omit the access token from the serialized state', async function () {
-        const pluginWithoutAccessToken = createMongoDBOIDCPlugin({
-          ...pluginOptions,
-          omitAccessToken: true,
-        });
-        await requestToken(
-          pluginWithoutAccessToken,
-          provider.getMongodbOIDCDBInfo()
-        );
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         const serializedData = JSON.parse(
           Buffer.from(
-            await pluginWithoutAccessToken.serialize(),
+            await plugin.serialize({ omitAccessToken: true }),
             'base64'
           ).toString('utf8')
         );
@@ -505,12 +498,8 @@ describe('OIDC plugin (local OIDC provider)', function () {
       });
 
       it('refreshes the access token when it was omitted from the serialized state', async function () {
-        const pluginWithoutAccessToken = createMongoDBOIDCPlugin({
-          ...pluginOptions,
-          omitAccessToken: true,
-        });
         const result1 = await requestToken(
-          pluginWithoutAccessToken,
+          plugin,
           provider.getMongodbOIDCDBInfo()
         );
         const skipAuthAttemptEvent = once(
@@ -519,8 +508,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         const restoredPlugin = createMongoDBOIDCPlugin({
           ...pluginOptions,
-          omitAccessToken: true,
-          serializedState: await pluginWithoutAccessToken.serialize(),
+          serializedState: await plugin.serialize({ omitAccessToken: true }),
         });
         const result2 = await requestToken(
           restoredPlugin,

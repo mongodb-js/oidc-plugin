@@ -181,19 +181,6 @@ export interface MongoDBOIDCPluginOptions {
   serializedState?: string;
 
   /**
-   * Whether to omit the access token from the serialized state returned by
-   * `serialize()`. Defaults to `false`.
-   *
-   * Set this to `true` when the serialized state is going to be written to
-   * persistent storage. The plugin will then request a new access token using
-   * the stored refresh token when it is restored.
-   *
-   * The ID token is still included in the serialized state, since it is used
-   * to verify that the refreshed token set belongs to the same principal.
-   */
-  omitAccessToken?: boolean;
-
-  /**
    * If set to true, creating the plugin will throw an exception when
    * `serializedState` is provided but cannot be deserialized.
    * If set to false, invalid serialized state will result in a log
@@ -261,6 +248,21 @@ export interface MongoDBOIDCPluginMongoClientOptions {
 }
 
 /** @public */
+export interface MongoDBOIDCSerializeOptions {
+  /**
+   * Whether to omit the access token from the serialized state.
+   * Defaults to `false`.
+   *
+   * Set this to `true` when the state is going to be written to persistent
+   * storage; the plugin will then request a new access token using the stored
+   * refresh token when it is restored. The ID token is still included, since
+   * it is used to verify that the refreshed token set belongs to the same
+   * principal.
+   */
+  omitAccessToken?: boolean;
+}
+
+/** @public */
 export interface MongoDBOIDCPlugin {
   /**
    * A subset of MongoClientOptions that need to be set in order
@@ -284,10 +286,9 @@ export interface MongoDBOIDCPlugin {
    * that instance behave as a resumed version of this instance.
    *
    * Be aware that this string contains OIDC tokens in plaintext unless
-   * `omitAccessToken` is set to `true`! Do not store it without appropriate
-   * security mechanisms in place.
+   * `omitAccessToken` is set to `true` in the options.
    */
-  serialize(): Promise<string>;
+  serialize(options?: MongoDBOIDCSerializeOptions): Promise<string>;
 
   /**
    * Destroy this plugin instance. Currently, this only clears timers
