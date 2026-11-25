@@ -311,11 +311,10 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
         .map(([key, state]) => {
           const tokenSet = state.currentTokenSet?.set?.serialize();
           if (tokenSet && omitAccessToken) {
-            const serializableTokenSet = tokenSet as Record<string, unknown>;
-            delete serializableTokenSet.access_token;
+            tokenSet.access_token = '';
             // Without the access token, the stored expiry is meaningless.
             // Force the plugin to obtain a new one using the refresh token.
-            serializableTokenSet.expiresAt = 0;
+            tokenSet.expiresAt = 0;
           }
           return [
             key,

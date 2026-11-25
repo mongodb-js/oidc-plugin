@@ -483,7 +483,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
       });
 
-      it('can omit the access token from the serialized state', async function () {
+      it('clears the access token in the serialized state', async function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         const serializedData = JSON.parse(
           Buffer.from(
@@ -492,7 +492,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
           ).toString('utf8')
         );
         const tokenSet = serializedData.state[0][1].currentTokenSet.set;
-        expect(tokenSet).to.not.have.property('access_token');
+        expect(tokenSet).to.have.property('access_token', '');
         expect(tokenSet).to.have.property('refresh_token');
         expect(tokenSet).to.have.property('expiresAt', 0);
       });
