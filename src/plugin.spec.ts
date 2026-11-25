@@ -137,8 +137,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
     defaultOpts = {
       logger,
-      // Opening browsers in CI systems can take a while...
-      openBrowserTimeout: 60_000,
+      // Opening browsers in CI systems can take a while, especially on the
+      // first run when Chromedriver has to be downloaded. Keep this well above
+      // the observed cold-start time (~65s on Windows CI).
+      openBrowserTimeout: 120_000,
     };
 
     // Needed so that the tests which use process.execPath to run
@@ -345,7 +347,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         // 0 -> browser timeout, 1 -> refresh timeout
         expect(timeouts[0].refed).to.equal(false);
         expect(timeouts[0].cleared).to.equal(false);
-        expect(timeouts[0].timeout).to.equal(60_000);
+        expect(timeouts[0].timeout).to.equal(defaultOpts.openBrowserTimeout);
         expect(timeouts[1].refed).to.equal(false);
         expect(timeouts[1].cleared).to.equal(false);
         // openid-client bases expiration time on the actual current time, so
