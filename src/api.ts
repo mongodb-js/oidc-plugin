@@ -251,13 +251,13 @@ export interface MongoDBOIDCPluginMongoClientOptions {
 export interface MongoDBOIDCSerializeOptions {
   /**
    * Whether to omit the access token from the serialized state.
-   * Defaults to `false`.
+   * Defaults to `true`.
    *
-   * Set this to `true` when the state is going to be written to persistent
-   * storage; the plugin will then request a new access token using the stored
-   * refresh token when it is restored. The ID token is still included, since
-   * it is used to verify that the refreshed token set belongs to the same
-   * principal.
+   * Pass `false` to include the access token, e.g. when the state is only kept
+   * in memory or shared over a trusted channel. When the access token is
+   * omitted, the plugin will request a new one using the stored refresh token
+   * when the state is restored. The ID token is still included, since it is
+   * used to verify that the refreshed token set belongs to the same principal.
    */
   omitAccessToken?: boolean;
 }
@@ -285,8 +285,8 @@ export interface MongoDBOIDCPlugin {
    * can be stored and be later passed to new plugin instances to make
    * that instance behave as a resumed version of this instance.
    *
-   * Be aware that this string contains OIDC tokens in plaintext unless
-   * `omitAccessToken` is set to `true` in the options.
+   * Be aware that this string contains OIDC tokens in plaintext when
+   * `omitAccessToken` is set to `false` in the options.
    */
   serialize(options?: MongoDBOIDCSerializeOptions): Promise<string>;
 

@@ -434,7 +434,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         const plugin2 = createMongoDBOIDCPlugin({
           ...pluginOptions,
-          serializedState: await plugin.serialize(),
+          serializedState: await plugin.serialize({ omitAccessToken: false }),
         });
         const result2 = await requestToken(
           plugin2,
@@ -458,7 +458,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         const plugin2 = createMongoDBOIDCPlugin({
           ...pluginOptions,
-          serializedState: await plugin.serialize(),
+          serializedState: await plugin.serialize({ omitAccessToken: false }),
         });
         const result2 = await requestToken(
           plugin2,
@@ -473,23 +473,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
         ]);
       });
 
-      it('includes the access token in the serialized state by default', async function () {
+      it('clears the access token in the serialized state by default', async function () {
         await requestToken(plugin, provider.getMongodbOIDCDBInfo());
         const serializedData = JSON.parse(
           Buffer.from(await plugin.serialize(), 'base64').toString('utf8')
-        );
-        expect(serializedData.state[0][1].currentTokenSet.set).to.have.property(
-          'access_token'
-        );
-      });
-
-      it('clears the access token in the serialized state', async function () {
-        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
-        const serializedData = JSON.parse(
-          Buffer.from(
-            await plugin.serialize({ omitAccessToken: true }),
-            'base64'
-          ).toString('utf8')
         );
         const tokenSet = serializedData.state[0][1].currentTokenSet.set;
         expect(tokenSet).to.have.property('access_token', '');
@@ -497,7 +484,19 @@ describe('OIDC plugin (local OIDC provider)', function () {
         expect(tokenSet).to.have.property('expiresAt', 0);
       });
 
-      it('refreshes the access token when it was omitted from the serialized state', async function () {
+      it('can include the access token in the serialized state', async function () {
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        const serializedData = JSON.parse(
+          Buffer.from(
+            await plugin.serialize({ omitAccessToken: false }),
+            'base64'
+          ).toString('utf8')
+        );
+        const tokenSet = serializedData.state[0][1].currentTokenSet.set;
+        expect(tokenSet.access_token).to.be.a('string').and.not.empty;
+      });
+
+      it('refreshes the access token when it was cleared from the serialized state', async function () {
         const result1 = await requestToken(
           plugin,
           provider.getMongodbOIDCDBInfo()
@@ -508,7 +507,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         const restoredPlugin = createMongoDBOIDCPlugin({
           ...pluginOptions,
-          serializedState: await plugin.serialize({ omitAccessToken: true }),
+          serializedState: await plugin.serialize(),
         });
         const result2 = await requestToken(
           restoredPlugin,

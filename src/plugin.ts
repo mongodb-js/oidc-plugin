@@ -302,7 +302,7 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
 
   // Separate method so we can re-use the inferred return type in _deserialize()
   private _serialize({
-    omitAccessToken = false,
+    omitAccessToken = true,
   }: MongoDBOIDCSerializeOptions = {}) {
     return {
       oidcPluginStateVersion: 1,
