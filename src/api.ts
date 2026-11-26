@@ -176,7 +176,7 @@ export interface MongoDBOIDCPluginOptions {
    * as returned by `.serialize()`.
    *
    * This option should only be passed if it comes from a trusted source,
-   * since it contains access tokens that will be sent to MongoDB servers.
+   * since it may contain access tokens that will be sent to MongoDB servers.
    */
   serializedState?: string;
 
@@ -248,6 +248,21 @@ export interface MongoDBOIDCPluginMongoClientOptions {
 }
 
 /** @public */
+export interface MongoDBOIDCSerializeOptions {
+  /**
+   * Whether to omit the access token from the serialized state.
+   * Defaults to `true`.
+   *
+   * Pass `false` to include the access token, e.g. when the state is only kept
+   * in memory or shared over a trusted channel. When the access token is
+   * omitted, the plugin will request a new one using the stored refresh token
+   * when the state is restored. The ID token is still included, since it is
+   * used to verify that the refreshed token set belongs to the same principal.
+   */
+  omitAccessToken?: boolean;
+}
+
+/** @public */
 export interface MongoDBOIDCPlugin {
   /**
    * A subset of MongoClientOptions that need to be set in order
@@ -270,10 +285,10 @@ export interface MongoDBOIDCPlugin {
    * can be stored and be later passed to new plugin instances to make
    * that instance behave as a resumed version of this instance.
    *
-   * Be aware that this string contains OIDC tokens in plaintext! Do not
-   * store it without appropriate security mechanisms in place.
+   * Be aware that this string contains OIDC tokens in plaintext when
+   * `omitAccessToken` is set to `false` in the options.
    */
-  serialize(): Promise<string>;
+  serialize(options?: MongoDBOIDCSerializeOptions): Promise<string>;
 
   /**
    * Destroy this plugin instance. Currently, this only clears timers

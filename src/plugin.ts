@@ -26,6 +26,7 @@ import type {
   DeviceFlowInformation,
   MongoDBOIDCPlugin,
   MongoDBOIDCPluginOptions,
+  MongoDBOIDCSerializeOptions,
   OpenBrowserOptions,
   OpenBrowserReturnType,
 } from './api';
@@ -300,19 +301,28 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
   }
 
   // Separate method so we can re-use the inferred return type in _deserialize()
-  private _serialize() {
+  private _serialize({
+    omitAccessToken = true,
+  }: MongoDBOIDCSerializeOptions = {}) {
     return {
       oidcPluginStateVersion: 1,
       state: [...this.mapIdpToAuthState]
         .filter(([, state]) => !!state.currentTokenSet)
         .map(([key, state]) => {
+          const tokenSet = state.currentTokenSet?.set?.serialize();
+          if (tokenSet && omitAccessToken) {
+            tokenSet.access_token = '';
+            // Without the access token, the stored expiry is meaningless.
+            // Force the plugin to obtain a new one using the refresh token.
+            tokenSet.expiresAt = 0;
+          }
           return [
             key,
             {
               id: state.id,
               serverOIDCMetadata: { ...state.serverOIDCMetadata },
               currentTokenSet: {
-                set: state.currentTokenSet?.set?.serialize(),
+                set: tokenSet,
               },
               lastIdTokenClaims: state.lastIdTokenClaims
                 ? { ...state.lastIdTokenClaims }
@@ -324,12 +334,14 @@ export class MongoDBOIDCPluginImpl implements MongoDBOIDCPlugin {
     } as const;
   }
 
-  public serialize(): Promise<string> {
+  public serialize(options?: MongoDBOIDCSerializeOptions): Promise<string> {
     // Wrap the result using JS-to-JSON-to-UTF8-to-Base64. We could probably
     // omit the base64 encoding, but this makes it clearer that it's an opaque
     // value that's not intended to be inspected or modified.
     return Promise.resolve(
-      Buffer.from(JSON.stringify(this._serialize()), 'utf8').toString('base64')
+      Buffer.from(JSON.stringify(this._serialize(options)), 'utf8').toString(
+        'base64'
+      )
     );
   }
 

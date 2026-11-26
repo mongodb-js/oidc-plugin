@@ -137,8 +137,10 @@ describe('OIDC plugin (local OIDC provider)', function () {
 
     defaultOpts = {
       logger,
-      // Opening browsers in CI systems can take a while...
-      openBrowserTimeout: 60_000,
+      // Opening browsers in CI systems can take a while, especially on the
+      // first run when Chromedriver has to be downloaded. Keep this well above
+      // the observed cold-start time (~65s on Windows CI).
+      openBrowserTimeout: 120_000,
     };
 
     // Needed so that the tests which use process.execPath to run
@@ -345,7 +347,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         // 0 -> browser timeout, 1 -> refresh timeout
         expect(timeouts[0].refed).to.equal(false);
         expect(timeouts[0].cleared).to.equal(false);
-        expect(timeouts[0].timeout).to.equal(60_000);
+        expect(timeouts[0].timeout).to.equal(defaultOpts.openBrowserTimeout);
         expect(timeouts[1].refed).to.equal(false);
         expect(timeouts[1].cleared).to.equal(false);
         // openid-client bases expiration time on the actual current time, so
@@ -434,7 +436,7 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         const plugin2 = createMongoDBOIDCPlugin({
           ...pluginOptions,
-          serializedState: await plugin.serialize(),
+          serializedState: await plugin.serialize({ omitAccessToken: false }),
         });
         const result2 = await requestToken(
           plugin2,
@@ -458,10 +460,59 @@ describe('OIDC plugin (local OIDC provider)', function () {
         );
         const plugin2 = createMongoDBOIDCPlugin({
           ...pluginOptions,
-          serializedState: await plugin.serialize(),
+          serializedState: await plugin.serialize({ omitAccessToken: false }),
         });
         const result2 = await requestToken(
           plugin2,
+          provider.getMongodbOIDCDBInfo()
+        );
+        expect(result1).to.not.deep.equal(result2);
+        expect(getJWTContents(result1.accessToken).sub).to.equal(
+          getJWTContents(result2.accessToken).sub
+        );
+        expect(await skipAuthAttemptEvent).to.deep.equal([
+          { reason: 'refresh-succeeded', authStateId: '0' },
+        ]);
+      });
+
+      it('clears the access token in the serialized state by default', async function () {
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        const serializedData = JSON.parse(
+          Buffer.from(await plugin.serialize(), 'base64').toString('utf8')
+        );
+        const tokenSet = serializedData.state[0][1].currentTokenSet.set;
+        expect(tokenSet).to.have.property('access_token', '');
+        expect(tokenSet).to.have.property('refresh_token');
+        expect(tokenSet).to.have.property('expiresAt', 0);
+      });
+
+      it('can include the access token in the serialized state', async function () {
+        await requestToken(plugin, provider.getMongodbOIDCDBInfo());
+        const serializedData = JSON.parse(
+          Buffer.from(
+            await plugin.serialize({ omitAccessToken: false }),
+            'base64'
+          ).toString('utf8')
+        );
+        const tokenSet = serializedData.state[0][1].currentTokenSet.set;
+        expect(tokenSet.access_token).to.be.a('string').and.not.empty;
+      });
+
+      it('refreshes the access token when it was cleared from the serialized state', async function () {
+        const result1 = await requestToken(
+          plugin,
+          provider.getMongodbOIDCDBInfo()
+        );
+        const skipAuthAttemptEvent = once(
+          logger,
+          'mongodb-oidc-plugin:skip-auth-attempt'
+        );
+        const restoredPlugin = createMongoDBOIDCPlugin({
+          ...pluginOptions,
+          serializedState: await plugin.serialize(),
+        });
+        const result2 = await requestToken(
+          restoredPlugin,
           provider.getMongodbOIDCDBInfo()
         );
         expect(result1).to.not.deep.equal(result2);
